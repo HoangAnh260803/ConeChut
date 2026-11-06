@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Workforce - Bulk Add Workers
 // @namespace    https://tampermonkey.net/
-// @version      2.3.1
-// @description  test update 2.3.1
+// @version      2.4
+// @description  
 // @match        http://global-autolabeling-service.evad.xiaomi.srv/appen/ui*
 // @require      https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js
 // @grant        none
@@ -308,94 +308,80 @@
   } catch (e) { /* bỏ qua */ }
 
 
-  // ---------- Giao diện (tông hồng pastel) ----------
+  // ---------- Giao diện (tông xanh lá #1c7a70) ----------
   const style = document.createElement('style');
   style.textContent = `
     .bw{position:fixed;right:16px;bottom:16px;width:290px;z-index:99999;display:none;overflow:hidden;
-      background:#fffafc;color:#5a3a47;border:1px solid #f9d0de;border-radius:16px;
+      background:#f2f9f8;color:#0d2e2b;border:1px solid #9fd0cb;border-radius:8px;
+      box-shadow:0 4px 16px rgba(28,122,112,.15);
       font:13px/1.45 -apple-system,"Segoe UI",Roboto,sans-serif}
     .bw-wide{width:350px}
     .bw-left{right:auto;left:16px}
     .bw-left .bw-list{max-height:calc(100vh - 230px)}
-    .bw-side{right:auto;bottom:auto;border-radius:12px}
+    .bw-side{right:auto;bottom:auto;border-radius:8px}
     .bw-side .bw-body{height:calc(100% - 40px);overflow:auto}
     .bw-side .bw-list{max-height:none}
     .bw-side .bw-row{flex-wrap:wrap}
     .bw-side .bw-jt,.bw-side .bw-stg{font-size:11px}
-    .bw-plat{margin-top:2px;font-size:11px;line-height:1.6}
-    .bw-plat .ok{color:#2e8b57}
-    .bw-plat .no{color:#d0386b}
     .bw *{box-sizing:border-box}
     .bw-head{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;
-      background:linear-gradient(135deg,#ffdce9,#ffc3d9);color:#7a2e4d;font-weight:600;font-size:13.5px}
-    .bw-body{padding:12px}
-    .bw input[type=text],.bw textarea,.bw select{width:100%;padding:6px 9px;color:#5a3a47;background:#fff;
-      border:1px solid #f4c9d8;border-radius:9px;outline:none;font:inherit;transition:border-color .15s}
-    .bw input[type=text]:focus,.bw textarea:focus,.bw select:focus{border-color:#ee82a8}
+      background:linear-gradient(135deg,#1c7a70,#145c54);color:#fff;font-weight:600;font-size:13.5px}
+    .bw-body{padding:12px;background:#fff}
+    .bw input[type=text],.bw textarea,.bw select{width:100%;padding:6px 9px;color:#0d2e2b;background:#fff;
+      border:1px solid #b8dbd8;border-radius:6px;outline:none;font:inherit;transition:border-color .15s}
+    .bw input[type=text]:focus,.bw textarea:focus,.bw select:focus{border-color:#1c7a70;box-shadow:0 0 0 2px rgba(28,122,112,.15)}
     .bw textarea{resize:vertical;height:104px}
-    .bw ::placeholder{color:#d2a6b7}
+    .bw ::placeholder{color:#7ab5b0}
     .bw-row{display:flex;gap:8px;align-items:flex-start}
     .bw-row + .bw-row,.bw-mt{margin-top:10px}
     .bw-row.sel{align-items:center;margin-bottom:8px}
     .bw-row.sel select:first-child{width:112px;flex:none}
-    .bw button{font:inherit;cursor:pointer;border-radius:9px;transition:background .15s,transform .05s;outline:none}
+    .bw button{font:inherit;cursor:pointer;border-radius:6px;transition:background .15s,transform .05s;outline:none}
     .bw button:active{transform:scale(.97)}
-    .bw-primary{flex:1;padding:8px;border:0;color:#6b2342;font-weight:600;
-      background:linear-gradient(135deg,#ffb9d2,#f7a0c0);}
-    .bw-primary:hover{background:linear-gradient(135deg,#ffc6db,#f98fb5)}
-    .bw-primary:disabled{opacity:.55;cursor:default;}
-    .bw-stop{display:none;padding:8px 14px;color:#c2406c;background:#fff;border:1px solid #f0a3bd}
-    .bw-stop:hover{background:#fff0f5}
-    .bw-ghost{flex:none;padding:5px 10px;color:#a0516f;background:#fff0f5;border:1px solid #f6c7d8}
-    .bw-ghost:hover{background:#ffe3ec}
+    .bw-primary{flex:1;padding:8px;border:0;color:#fff;font-weight:600;background:#1c7a70}
+    .bw-primary:hover{background:#22968a}
+    .bw-primary:disabled{opacity:.5;cursor:default}
+    .bw-stop{display:none;padding:8px 14px;color:#1c7a70;background:#fff;border:1px solid #9fd0cb}
+    .bw-stop:hover{background:#f2f9f8}
+    .bw-ghost{flex:none;padding:5px 10px;color:#1c7a70;background:#e8f5f4;border:1px solid #9fd0cb}
+    .bw-ghost:hover{background:#cceae7}
+    .bw-ghost:disabled{opacity:.5;cursor:default}
     .bw-roles{display:none;flex-wrap:wrap;gap:5px;margin-bottom:10px}
-    .bw-chip{padding:2px 10px;font-size:12px;color:#8a3b5a;background:#fff0f5;border:1px solid #f6c7d8;border-radius:999px}
-    .bw-chip:hover{background:#ffdfe9;border-color:#ee9fbb}
-    .bw-list{max-height:262px;overflow:auto;background:#fff;border:1px solid #f9d9e4;border-radius:10px}
-    .bw-line{display:flex;gap:8px;align-items:center;padding:5px 8px;border-bottom:1px solid #fdeaf1}
+    .bw-chip{padding:2px 10px;font-size:12px;color:#145c54;background:#e8f5f4;border:1px solid #9fd0cb;border-radius:999px}
+    .bw-chip:hover{background:#cceae7;border-color:#5bb8b0}
+    .bw-list{max-height:262px;overflow:auto;background:#fff;border:1px solid #b8dbd8;border-radius:6px}
+    .bw-line{display:flex;gap:8px;align-items:center;padding:5px 8px;border-bottom:1px solid #dff0ee}
     .bw-line:last-child{border-bottom:0}
-    .bw-line:hover{background:#fff7fa}
+    .bw-line:hover{background:#f2f9f8}
     .bw-line input[type=text]{width:152px;flex:none;padding:3px 8px}
     .bw-lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .bw-hint{padding:10px;color:#b58a9b;font-size:12px}
-    .bw-log{display:none;margin-top:10px;max-height:120px;overflow:auto;padding:7px 9px;background:#fff5f9;
-      border:1px solid #fadce7;border-radius:9px;font:12px Consolas,monospace;white-space:pre-wrap}
-    .bw-foot{display:flex;gap:14px;margin-top:10px;font-size:11px;color:#bf93a5}
+    .bw-hint{padding:10px;color:#5a9e99;font-size:12px}
+    .bw-log{display:none;margin-top:10px;max-height:120px;overflow:auto;padding:7px 9px;background:#f2f9f8;
+      border:1px solid #b8dbd8;border-radius:6px;font:12px Consolas,monospace;white-space:pre-wrap}
+    .bw-foot{display:flex;gap:14px;margin-top:10px;font-size:11px;color:#5a9e99}
     .bw-foot label{cursor:pointer}
-    .bw-foot label:hover{color:#e0709a}
+    .bw-foot label:hover{color:#1c7a70}
     .bw ::-webkit-scrollbar{width:7px;height:7px}
-    .bw ::-webkit-scrollbar-thumb{background:#f6bcd0;border-radius:6px}
-    .bw,.bw *{scrollbar-width:thin;scrollbar-color:#f6bcd0 transparent}
+    .bw ::-webkit-scrollbar-thumb{background:#9fd0cb;border-radius:6px}
+    .bw,.bw *{scrollbar-width:thin;scrollbar-color:#9fd0cb transparent}
     .bw-sug{position:fixed;z-index:100000;display:none;min-width:180px;max-height:200px;overflow:auto;padding:4px;
-      background:#fff;color:#5a3a47;border:1px solid #f4c9d8;border-radius:10px;
+      background:#fff;color:#0d2e2b;border:1px solid #9fd0cb;border-radius:6px;box-shadow:0 3px 12px rgba(28,122,112,.15);
       font:13px -apple-system,"Segoe UI",Roboto,sans-serif}
-    .bw-sug-item{display:flex;justify-content:space-between;gap:12px;padding:5px 9px;border-radius:7px;cursor:pointer}
-    .bw-sug-item.on,.bw-sug-item:hover{background:#ffe4ee}
-    .bw-sug-tag{color:#c79ab0;font-size:11px}
-    .bw-stat{margin-top:6px;font-size:11px;color:#bf93a5}
-    .bw-job{display:none;margin-bottom:8px;padding:6px 8px;max-height:108px;overflow:auto;background:#fff;border:1px solid #f9d9e4;border-radius:10px;font-size:12px}
-    .bw-job-t{margin-bottom:2px;color:#b58a9b;font-size:11px}
+    .bw-sug-item{display:flex;justify-content:space-between;gap:12px;padding:5px 9px;border-radius:4px;cursor:pointer}
+    .bw-sug-item.on,.bw-sug-item:hover{background:#e8f5f4}
+    .bw-sug-tag{color:#5a9e99;font-size:11px}
+    .bw-stat{margin-top:6px;font-size:11px;color:#5a9e99}
     .bw-stg{line-height:1.75}
-    .bw-stg b{margin-right:4px;color:#a0516f}
-    .bw-acc{display:inline-block;margin:0 4px 2px 0;padding:0 7px;color:#8a3b5a;background:#fff0f5;border:1px solid #f6c7d8;border-radius:999px}
-    .bw-acc i{margin-left:3px;font-style:normal;color:#c79ab0}
-    .bw-jcard{padding:7px 9px;border-bottom:1px solid #fdeaf1}
-    .bw-jcard:last-child{border-bottom:0}
-    .bw-jt{display:flex;gap:6px;justify-content:space-between;align-items:flex-start;font-weight:600;color:#7a2e4d;font-size:12px}
-    .bw-jtn{cursor:pointer;word-break:break-all}
-    .bw-jtn:hover{color:#e0568a}
-    .bw-jn{flex:none;padding:0 7px;font-weight:400;font-size:11px;color:#a0516f;background:#fff0f5;border:1px solid #f6c7d8;border-radius:999px}
-    .bw-lblwrap{flex:1;min-width:0}
-    .bw-lblwrap .bw-lbl{display:block}
-    .bw-hist{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#b58a9b;font-size:10.5px}
-    .bw-ghost:disabled{opacity:.55;cursor:default}
+    .bw-stg b{margin-right:4px;color:#145c54}
+    .bw-acc{display:inline-block;margin:0 4px 2px 0;padding:0 7px;color:#145c54;background:#e8f5f4;border:1px solid #9fd0cb;border-radius:999px}
+    .bw-acc i{margin-left:3px;font-style:normal;color:#5a9e99}
   `;
   document.head.appendChild(style);
 
   const panel = document.createElement('div');
   panel.className = 'bw';
   panel.innerHTML = `
-    <div id="bw-head" class="bw-head"><b>🌸  </b><span id="bw-toggle">–</span></div>
+    <div id="bw-head" class="bw-head"><b>⚡ Workforce</b><span id="bw-toggle">–</span></div>
     <div id="bw-body" class="bw-body">
       <div id="bw-roles" class="bw-roles"></div>
       <div class="bw-row">
@@ -416,7 +402,7 @@
   document.body.appendChild(panel);
 
   const $ = (id) => panel.querySelector('#' + id);
-  const colors = { ok: '#2f9e6b', err: '#d0386b', info: '#8a6275' };
+  const colors = { ok: '#1c7a70', err: '#cf1322', info: '#5a9e99' };
   function log(text, type = 'info') {
     const box = $('bw-log');
     box.style.display = 'block';
@@ -706,9 +692,7 @@
       if (!jobId) throw new Error('Không đọc được jobId từ địa chỉ trang');
       setStat('Đang lấy danh sách ID...');
       res = await fetchAllRecords(jobId, (p, n) => setStat(`Đang lấy trang ${p}... (${n} ID)`));
-      if (!res.found.size) {
-        log2(`Không lấy được dòng nào (jobId ${res.ctx.jobId}, cycle ${res.ctx.cycle}). Nếu sai cycle: đổi trang hoặc tab trên bảng một lần để script học đúng tham số, rồi bấm ↻`, 'err');
-      }
+
     } catch (e) {
       log2('Lỗi khi lấy danh sách: ' + e.message, 'err');
     } finally {
@@ -824,7 +808,7 @@
   const panel2 = document.createElement('div');
   panel2.className = 'bw bw-wide';
   panel2.innerHTML = `
-    <div id="d-head" class="bw-head"><b>🌸 </b><span id="d-toggle">–</span></div>
+    <div id="d-head" class="bw-head"><b>⚡ Data Center</b><span id="d-toggle">–</span></div>
     <div id="d-body" class="bw-body">
       <div class="bw-row sel">
         <select id="d-role" title="Nhóm role dùng làm người nhận"></select>
