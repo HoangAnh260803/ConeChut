@@ -2,13 +2,15 @@
 // @name         BPO Job Lookup (tìm job + tài khoản Data Center)
 // @namespace    bpo-job-lookup
 // @version      1.1
-// @description   TEST AUTO UPDATE - phiên bản 1.1
-// @match        *://*/*
+// @description  Nhập tên job -> hiện Labeling Job / 1 Round QA / 2 Round QA và danh sách ID + tên tài khoản còn trong từng job
+// @match        http://global-autolabeling-service.evad.xiaomi.srv/appen/ui*
 // @run-at       document-start
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
+// @updateURL    https://github.com/HoangAnh260803/ConeChut/raw/refs/heads/main/scripts/BPO_Job_Lookup.user.js
+// @downloadURL  https://github.com/HoangAnh260803/ConeChut/raw/refs/heads/main/scripts/BPO_Job_Lookup.user.js
 // @connect      *
 // ==/UserScript==
 (function () {
