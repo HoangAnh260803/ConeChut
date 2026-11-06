@@ -9,8 +9,8 @@
 // @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
-// @updateURL    https://github.com/HoangAnh260803/ConeChut/raw/refs/heads/main/scripts/BPO_Job_Lookup.js
-// @downloadURL  https://github.com/HoangAnh260803/ConeChut/raw/refs/heads/main/scripts/BPO_Job_Lookup.js
+// @updateURL    https://raw.githubusercontent.com/HoangAnh260803/ConeChut/refs/heads/main/scripts/BPO_Job_Lookup.js
+// @downloadURL  https://raw.githubusercontent.com/HoangAnh260803/ConeChut/refs/heads/main/scripts/BPO_Job_Lookup.js
 // @connect      *
 // ==/UserScript==
 (function () {
