@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         BPO Job Lookup (tìm job + tài khoản Data Center)
 // @namespace    bpo-job-lookup
-// @version      1.0
-// @description  Nhập tên job -> hiện Labeling Job / 1 Round QA / 2 Round QA và danh sách ID + tên tài khoản còn trong từng job
+// @version      1.1
+// @description   TEST AUTO UPDATE - phiên bản 1.1
 // @match        *://*/*
 // @run-at       document-start
 // @grant        GM_getValue
