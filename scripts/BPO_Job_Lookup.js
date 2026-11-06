@@ -1,16 +1,14 @@
 // ==UserScript==
-// @name         BPO Job Lookup (tìm job + tài khoản Data Center)
+// @name         BPO Job Lookup
 // @namespace    bpo-job-lookup
-// @version      1.2
-// @description  Test update 1.2
-// @match        http://global-autolabeling-service.evad.xiaomi.srv/appen/ui*
+// @version      1.3
+// @description  
+// @match        *://*/*
 // @run-at       document-start
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
-// @updateURL    https://raw.githubusercontent.com/HoangAnh260803/ConeChut/refs/heads/main/scripts/BPO_Job_Lookup.js
-// @downloadURL  https://raw.githubusercontent.com/HoangAnh260803/ConeChut/refs/heads/main/scripts/BPO_Job_Lookup.js
 // @connect      *
 // ==/UserScript==
 (function () {
@@ -279,32 +277,52 @@
     for (var i = 0; i < pri.length; i++) for (var j = 0; j < c.length; j++) if (pri[i].test(c[j][0]) && !bad.test(c[j][0])) return c[j][1];
     return '';
   }
-  var cubBusy = 0, cubQueue = [], CUB_MAX = 6;
-  function cubAcquire() { return new Promise(function (go) { if (cubBusy < CUB_MAX) { cubBusy++; go(); } else cubQueue.push(go); }); }
-  function cubRelease() { var nx = cubQueue.shift(); if (nx) nx(); else cubBusy--; }
+  function sem(max) {
+    var busy = 0, q = [];
+    return {
+      acquire: function () { return new Promise(function (go) { if (busy < max) { busy++; go(); } else q.push(go); }); },
+      release: function () { var nx = q.shift(); if (nx) nx(); else busy--; }
+    };
+  }
+  var directSem = sem(10), frameSem = sem(3), dFail = 0;
+  function dfail(rec, why, extra) {
+    if (dFail++ < 4) diagPush({ c: 'DIRECT', rec: rec, why: why, extra: String(extra || '').slice(0, 500) });
+    return null;
+  }
   async function directCount(recId, pid, fid) {
     var url = location.origin + '/appen/mashup/ssr/data-preview?recordId=' + recId + '&projectId=' + pid + '&role=bpo&flowId=' + fid + '&locale=en-US';
     var res1 = await origFetch(url, { credentials: 'include' });
-    if (!res1.ok) return null;
-    var html = (await res1.text()).replace(/\\u002F/gi, '/').replace(/\\\//g, '/');
-    var m = html.match(/https?:\/\/[^"'\s\\<>]+\/api\/label\/appen\/v1\/prev_label\?[^"'\s\\<>]+/);
-    if (!m) return null;
+    if (!res1.ok) return dfail(recId, 'html status ' + res1.status);
+    var html = (await res1.text()).replace(/\\u002F/gi, '/').replace(/\\u0026/gi, '&').replace(/\\\//g, '/').replace(/&amp;/g, '&');
+    var resultUrl = '', m = html.match(/https?:\/\/[^"'\s\\<>]+\/api\/label\/appen\/v1\/prev_label\?[^"'\s\\<>]+/);
+    if (m) resultUrl = m[0];
+    else {
+      var mf = html.match(/(https?:\/\/[^"'\s\\<>]+\/api\/label\/appen\/v1\/)manifest\?uuid=([^&"'\s\\<>]+)&name=manifest_([^&"'\s\\<>]+?\.json)/);
+      if (mf) resultUrl = mf[1] + 'prev_label?uuid=' + mf[2] + '&name=prev_label_' + mf[3];
+    }
+    if (!resultUrl) {
+      var ix = html.search(/prev_label|manifest/i);
+      return dfail(recId, 'no url in html', 'len=' + html.length + ' idx=' + ix + ' ctx=' + (ix >= 0 ? html.slice(Math.max(0, ix - 150), ix + 250) : html.slice(0, 300)));
+    }
     var res2 = await origFetch(location.origin + '/appen/pointcloud/contributor_proxy/v1/lidar/get_result', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ resultUrl: m[0].replace(/&amp;/g, '&') })
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ resultUrl: resultUrl })
     });
-    if (!res2.ok) return null;
-    var j = await res2.json();
-    if (!j || !j.data || !Array.isArray(j.data.frames)) return null;
+    var txt = await res2.text(), j = null;
+    try { j = JSON.parse(txt); } catch (e) {}
+    if (!res2.ok) return dfail(recId, 'get_result status ' + res2.status, txt.slice(0, 300));
+    if (!j || !j.data || !Array.isArray(j.data.frames)) return dfail(recId, 'result shape', txt.slice(0, 300));
     return countFrames(j);
   }
   async function previewCount(job, recId) {
-    await cubAcquire();
-    try {
-      var m = job.id.match(/^G(\d+)-F(\d+)-/);
-      if (m) { try { var d = await directCount(recId, m[1], m[2]); if (d != null) return d; } catch (e) {} }
-      return await previewCount1(job, recId);
-    } finally { cubRelease(); }
+    var m = job.id.match(/^G(\d+)-F(\d+)-/);
+    if (m) {
+      await directSem.acquire();
+      try { var d = await directCount(recId, m[1], m[2]); if (d != null) return d; }
+      catch (e) { dfail(recId, 'exception', e && e.message); }
+      finally { directSem.release(); }
+    }
+    await frameSem.acquire();
+    try { return await previewCount1(job, recId); } finally { frameSem.release(); }
   }
   function previewCount1(job, recId) {
     return new Promise(function (ok) {
@@ -333,7 +351,7 @@
   async function fillCub(job, list) {
     list.forEach(function (x) { x.cub = '…'; }); render();
     var i = 0;
-    await Promise.all([0, 1, 2, 3].map(async function () {
+    await Promise.all([0, 1, 2, 3, 4, 5, 6, 7].map(async function () {
       while (i < list.length) {
         var x = list[i++];
         try { x.cub = await previewCount(job, x.id); } catch (e) { x.cub = '?'; }
