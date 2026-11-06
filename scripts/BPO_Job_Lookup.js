@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BPO Job Lookup
 // @namespace    bpo-job-lookup
-// @version      1.3
+// @version      1.4
 // @description  
 // @match        *://*/*
 // @run-at       document-start
@@ -59,15 +59,38 @@
     if (typeof o === 'object') for (var k in o) { var a = findArr(o[k], d + 1); if (a && (!best || a.length > best.length)) best = a; }
     return best;
   }
+  // Các key phân biệt cuboid — compile 1 lần
+  var CUB_TYPE_KEYS = ['type', 'objectType', 'shape', 'toolType', 'geometryType', 'annotationType', 'className'];
+  var CUB_CENTER_RE = /^(center|position|centerPoint)$/i;
+  var CUB_SIZE_RE   = /^(size|dimension|dimensions|scale)$/i;
   function countCub(o, d) {
-    d = d || 0; if (!o || typeof o !== 'object' || d > 14) return 0;
+    d = d || 0; if (!o || typeof o !== 'object' || d > 10) return 0;
     if (!Array.isArray(o)) {
-      var k = Object.keys(o);
-      var has = function (re) { return k.some(function (x) { return re.test(x); }); };
-      var typ = ['type', 'objectType', 'shape', 'toolType', 'geometryType', 'annotationType', 'className'].some(function (x) { return typeof o[x] === 'string' && /cuboid|3d/i.test(o[x]); });
-      if (typ || (has(/^(center|position|centerPoint)$/i) && has(/^(size|dimension|dimensions|scale)$/i))) return 1;
+      // Kiểm tra type trước (nhanh, early-exit)
+      for (var ti = 0; ti < CUB_TYPE_KEYS.length; ti++) {
+        var tv = o[CUB_TYPE_KEYS[ti]];
+        if (typeof tv === 'string' && /cuboid|3d/i.test(tv)) return 1;
+      }
+      // Kiểm tra center+size
+      var hasCenter = false, hasSize = false;
+      var ks = Object.keys(o);
+      for (var ki = 0; ki < ks.length; ki++) {
+        if (CUB_CENTER_RE.test(ks[ki])) hasCenter = true;
+        else if (CUB_SIZE_RE.test(ks[ki])) hasSize = true;
+        if (hasCenter && hasSize) return 1;
+      }
     }
-    var n = 0; for (var x in o) n += countCub(o[x], d + 1); return n;
+    // Tối ưu array: nếu array đồng nhất (item đầu là cuboid) → nhân length
+    if (Array.isArray(o) && o.length > 1 && o[0] && typeof o[0] === 'object') {
+      var sample = countCub(o[0], d + 1);
+      if (sample === 1) return o.length; // tất cả item cùng loại
+    }
+    var n = 0;
+    for (var x in o) {
+      var v = o[x];
+      if (v && typeof v === 'object') n += countCub(v, d + 1);
+    }
+    return n;
   }
   function gmGet(k, d) { try { return typeof GM_getValue === 'function' ? GM_getValue(k, d) : (localStorage.getItem(k) || d); } catch (e) { return d; } }
   function gmSet(k, v) { try { if (typeof GM_setValue === 'function') GM_setValue(k, v); else localStorage.setItem(k, v); } catch (e) {} }
@@ -284,7 +307,7 @@
       release: function () { var nx = q.shift(); if (nx) nx(); else busy--; }
     };
   }
-  var directSem = sem(10), frameSem = sem(3), dFail = 0;
+  var directSem = sem(20), frameSem = sem(4), dFail = 0;
   function dfail(rec, why, extra) {
     if (dFail++ < 4) diagPush({ c: 'DIRECT', rec: rec, why: why, extra: String(extra || '').slice(0, 500) });
     return null;
@@ -340,24 +363,37 @@
         if (v) { try { out = JSON.parse(v).n; done = true; } catch (e) {} }
         else {
           var lt = +gmGet(lkey, '0');
-          if (lt && Date.now() - lt > 25000) { out = 0; done = true; }
-          else if (Date.now() - t0 > 60000) { out = '?'; done = true; }
+          if (lt && Date.now() - lt > 15000) { out = 0; done = true; } // giảm 25s → 15s
+          else if (Date.now() - t0 > 45000) { out = '?'; done = true; } // giảm 60s → 45s
         }
         if (done) { clearInterval(iv); f.remove(); gmSet(key, ''); gmSet(lkey, ''); ok(out); }
-      }, 400);
+      }, 150); // poll nhanh hơn: 400ms → 150ms
       document.body.appendChild(f);
     });
   }
   async function fillCub(job, list) {
     list.forEach(function (x) { x.cub = '…'; }); render();
     var i = 0;
-    await Promise.all([0, 1, 2, 3, 4, 5, 6, 7].map(async function () {
-      while (i < list.length) {
-        var x = list[i++];
-        try { x.cub = await previewCount(job, x.id); } catch (e) { x.cub = '?'; }
-        render();
-      }
+    // Dùng 20 worker song song thay vì 8; render gộp theo batch để tránh thrash DOM
+    var WORKERS = 20;
+    var pending = 0, renderScheduled = false;
+    function scheduleRender() {
+      if (renderScheduled) return;
+      renderScheduled = true;
+      requestAnimationFrame(function () { renderScheduled = false; render(); });
+    }
+    await Promise.all(Array.from({ length: WORKERS }, function () {
+      return (async function () {
+        while (true) {
+          var idx = i++;
+          if (idx >= list.length) break;
+          var x = list[idx];
+          try { x.cub = await previewCount(job, x.id); } catch (e) { x.cub = '?'; }
+          scheduleRender();
+        }
+      })();
     }));
+    render(); // render lần cuối đảm bảo đủ
   }
     async function fetchAccounts(role, jobNum, jid) {
     var t = tpl.data.req, out = [], seen = {}, nk = '', nkLogged = 0, total = null, sz = 10;
@@ -459,44 +495,121 @@
       a.map(function (x, i) { return '<tr><td>' + (i + 1) + '</td><td>' + esc(x.id) + '</td><td>' + (x.name ? esc(x.name) : '<span style="color:#98a2b3">—</span>') + '</td><td>' + (x.cub == null ? '' : esc(x.cub)) + '</td></tr>'; }).join('') + '</table></div>';
     return '<div class="j"><span class="r">' + role + '</span><div class="m">' + esc(j.id) + ' · ' + esc(j.status) + '</div>' + body + '</div>';
   }
+  // _builtKey[gi+'|'+ri] = số accounts đã render vào DOM (dùng để detect khi accounts mới load)
+  var _builtKey = {}, _lastCub = {};
+
   function render() {
-    $('#bpl-out').innerHTML = res.map(function (g) {
-      return '<div class="g"><div class="gh">' + esc(g.base) + '</div><div class="c">' + ROLES.map(function (r) { return jobHtml(r, g.jobs[r.toLowerCase()]); }).join('') + '</div></div>';
-    }).join('');
+    var out = $('#bpl-out');
+    var groups = out.children;
+
+    // Full rebuild khi danh sách group thay đổi (search mới)
+    if (groups.length !== res.length) {
+      _builtKey = {}; _lastCub = {};
+      out.innerHTML = res.map(function (g) {
+        return '<div class="g"><div class="gh">' + esc(g.base) + '</div><div class="c">' +
+          ROLES.map(function (r) { return jobHtml(r, g.jobs[r.toLowerCase()]); }).join('') +
+        '</div></div>';
+      }).join('');
+      // Ghi nhận những cột đã có accounts ngay lần đầu
+      res.forEach(function (g, gi) {
+        ROLES.forEach(function (role, ri) {
+          var j = g.jobs[role.toLowerCase()];
+          if (j && j.accounts) _builtKey[gi + '|' + ri] = j.accounts.length;
+        });
+      });
+      return;
+    }
+
+    // Patch mode: duyệt từng cột job
+    res.forEach(function (g, gi) {
+      var gEl = groups[gi]; if (!gEl) return;
+      var jCols = gEl.querySelectorAll('.j');
+      ROLES.forEach(function (role, ri) {
+        var j = g.jobs[role.toLowerCase()];
+        var jEl = jCols[ri]; if (!jEl) return;
+        var bk = gi + '|' + ri;
+
+        // Accounts vừa mới xuất hiện hoặc số lượng thay đổi → rebuild cột này
+        var builtCount = _builtKey[bk];
+        var nowCount = j && j.accounts ? j.accounts.length : -1;
+        if (builtCount !== nowCount) {
+          _builtKey[bk] = nowCount;
+          // Xóa snapshot cuboid cũ của cột này
+          Object.keys(_lastCub).forEach(function (k) { if (k.indexOf(gi + '|' + ri + '|') === 0) delete _lastCub[k]; });
+          jEl.outerHTML = jobHtml(role, j);
+          // Lấy lại jEl sau khi thay thế
+          jEl = jCols[ri];
+          return;
+        }
+
+        // Chỉ patch cuboid nếu accounts đã có trong DOM
+        if (!j || !j.accounts) return;
+
+        // Cập nhật dòng tổng
+        var sumEl = jEl.querySelector('b');
+        if (sumEl) {
+          var newSum = 'Còn ' + j.accounts.length + ' tài khoản' + cubSum(j.accounts);
+          if (sumEl.textContent !== newSum) sumEl.textContent = newSum;
+        }
+
+        // Patch từng cell cuboid
+        var rows = jEl.querySelectorAll('table tr');
+        j.accounts.forEach(function (x, ai) {
+          var k = gi + '|' + ri + '|' + ai;
+          var cur = x.cub == null ? '' : String(x.cub);
+          if (_lastCub[k] === cur) return;
+          _lastCub[k] = cur;
+          var tr = rows[ai + 1]; if (!tr) return;
+          var td = tr.cells[3]; if (!td) return;
+          td.textContent = cur;
+        });
+      });
+    });
   }
-  function log(t) { $('#bpl-log').textContent = t; }
   async function run() {
     var q = $('#bpl-q').value.trim(); if (!q) return;
     tpl = loadTpl();
     updateBadge();
     res = []; render(); lastTs = new Date().toLocaleString('vi-VN');
     try {
-      log('Đang tìm job…');
+      $('#bpl-log').textContent = 'Đang tìm job…';
       var rows = await searchJobs(q), g = {};
       rows.forEach(function (r) { var p = parts(r.name); (g[p.base] = g[p.base] || {})[p.role] = r; });
       res = Object.keys(g).map(function (b) { return { base: b, jobs: g[b] }; });
       render();
-      if (!rows.length) { log('Không thấy job nào khớp tên.'); return; }
-      if (!tpl.data) { log('Đã tìm thấy job. Chưa học được API Data Center nên chưa có tài khoản.'); return; }
+      if (!rows.length) { $('#bpl-log').textContent = 'Không thấy job nào khớp tên.'; return; }
+      if (!tpl.data) { $('#bpl-log').textContent = 'Đã tìm thấy job. Chưa học được API Data Center nên chưa có tài khoản.'; return; }
       var n = 0;
       learnedRole = '';
       res.forEach(function (g) { ROLES.forEach(function (r) { var jj = g.jobs[r.toLowerCase()]; if (jj && jj.id.match(/(\d+)$/)[1] === tpl.data.jobId) learnedRole = r.toLowerCase(); }); });
       cubRole = '';
       if (tpl.cub && tpl.cub.jobId) res.forEach(function (g) { ROLES.forEach(function (r) { var jj = g.jobs[r.toLowerCase()]; if (jj && jj.id.match(/(\d+)$/)[1] === tpl.cub.jobId) cubRole = r.toLowerCase(); }); });
-      var tasks = [];
-      log('Đang lấy dữ liệu…');
+      // Fetch accounts tất cả role song song → ID/tên hiện đều nhau
+      var accountTasks = [];
       res.forEach(function (g) {
         ROLES.forEach(function (r) {
           var j = g.jobs[r.toLowerCase()]; if (!j) return;
-          tasks.push((async function () {
-            try { var jn = j.id.match(/(\d+)$/)[1]; j.accounts = await fetchAccounts(r, jn, j.id); render(); await fillCub(j, j.accounts); } catch (e) { j.err = e.message; }
-            render();
+          accountTasks.push((async function () {
+            try { var jn = j.id.match(/(\d+)$/)[1]; j.accounts = await fetchAccounts(r, jn, j.id); render(); }
+            catch (e) { j.err = e.message; render(); }
           })());
         });
       });
-      await Promise.all(tasks);
-      log('Dữ liệu lúc ' + lastTs);
-    } catch (e) { log('Lỗi: ' + e.message); }
+      await Promise.all(accountTasks);
+
+      // fillCub: Labeling Job trước, QA sau
+      var labeling = [];
+      res.forEach(function (g) { var j = g.jobs['labeling job']; if (j && j.accounts) labeling.push({ r: 'Labeling Job', j: j }); });
+      await Promise.all(labeling.map(function (x) {
+        return fillCub(x.j, x.j.accounts).catch(function () {});
+      }));
+      var qaFill = [];
+      res.forEach(function (g) {
+        ['1 Round QA', '2 Round QA'].forEach(function (r) { var j = g.jobs[r.toLowerCase()]; if (j && j.accounts) qaFill.push(j); });
+      });
+      await Promise.all(qaFill.map(function (j) { return fillCub(j, j.accounts).catch(function () {}); }));
+      $('#bpl-log').textContent = 'Dữ liệu lúc ' + lastTs;
+    } catch (e) { $('#bpl-log').textContent = 'Lỗi: ' + e.message; }
   }
   function copyText(t) {
     function fb() { var ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;left:-9999px'; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (e) {} ta.remove(); }
@@ -516,7 +629,7 @@
     im.src = dataUrl;
   }
   function shot() {
-    if (!res.length) { log('Chưa có kết quả để chụp.'); return; }
+    if (!res.length) { $('#bpl-log').textContent = 'Chưa có kết quả để chụp.'; return; }
     var out = $('#bpl-out'), w = Math.ceil(out.getBoundingClientRect().width);
     var c = document.createElement('div');
     c.id = 'bpl'; c.className = 'full';
@@ -537,26 +650,26 @@
       var g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.scale(k, k); g.drawImage(img, 0, 0);
       showShot(cv.toDataURL('image/png'));
     };
-    img.onerror = function () { log('Lỗi khi chụp ảnh.'); };
+    img.onerror = function () { $('#bpl-log').textContent = 'Lỗi khi chụp ảnh.'; };
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   }
   function mount() {
     css();
     panel = document.createElement('div'); panel.id = 'bpl';
     panel.innerHTML = '<div class="h" id="bpl-h"><span>🔎 BPO Job Lookup</span><span id="bpl-t" style="cursor:pointer">–</span></div>' +
-      '<div class="b"><span style="position:relative;display:inline-block;width:min(560px,100%)"><input id="bpl-q" style="width:100%;padding-right:28px" placeholder="Nhập tên job gốc, ví dụ: 行车-周视OD-L-1102-4-v1.1.0-同源-路口通行"><button id="bpl-x" title="Xóa" style="display:none;position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:transparent;padding:2px 6px;font-size:14px;color:#667085">✕</button></span><button class="p" id="bpl-go">Tìm</button><button id="bpl-shot">📷 Chụp ảnh</button><button id="bpl-log2">📋 Log</button><button id="bpl-clr">Xóa log</button><button id="bpl-rst" title="Xóa API đã học">Reset API</button>' +
+      '<div class="b"><span style="position:relative;display:inline-block;width:min(560px,100%)"><input id="bpl-q" style="width:100%;padding-right:28px" placeholder="Nhập tên job gốc, ví dụ: 行车-周视OD-L-1102-4-v1.1.0-同源-路口通行"><button id="bpl-x" title="Xóa" style="display:none;position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:transparent;padding:2px 6px;font-size:14px;color:#667085">✕</button></span><button class="p" id="bpl-go">Tìm</button><button id="bpl-shot">📷 Chụp ảnh</button><button id="bpl-rst" title="Xóa API đã học">Reset API</button>' +
       '<div class="m" id="bpl-badge"></div><div class="m" id="bpl-log"></div><div id="bpl-out"></div></div>';
     document.body.appendChild(panel);
     $ = function (s) { return panel.querySelector(s); };
     updateBadge();
-    $('#bpl-go').onclick = run; $('#bpl-shot').onclick = shot; $('#bpl-log2').onclick = showReport; $('#bpl-clr').onclick = function () { gmSet(DK, '[]'); log('Đã xóa log.'); };
+    $('#bpl-go').onclick = run; $('#bpl-shot').onclick = shot;
     $('#bpl-q').addEventListener('input', function () { $('#bpl-x').style.display = this.value ? '' : 'none'; });
     $('#bpl-x').onclick = function () { var q = $('#bpl-q'); q.value = ''; this.style.display = 'none'; q.focus(); };
     $('#bpl-out').addEventListener('click', function (e) {
       var id = e.target.getAttribute && e.target.getAttribute('data-copy'); if (!id) return;
       var vals = [];
       res.forEach(function (g) { ROLES.forEach(function (r) { var j = g.jobs[r.toLowerCase()]; if (j && j.id === id && j.accounts) vals = j.accounts.map(function (x) { return x.cub == null ? '' : x.cub; }); }); });
-      copyText(vals.join('\n')); log('Đã copy ' + vals.length + ' giá trị cuboid theo thứ tự bảng');
+      copyText(vals.join('\n')); $('#bpl-log').textContent = 'Đã copy ' + vals.length + ' giá trị cuboid theo thứ tự bảng';
     });
     $('#bpl-rst').onclick = function () { tpl = {}; saveTpl(); };
     $('#bpl-q').addEventListener('keydown', function (e) { if (e.key === 'Enter') run(); });
