@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Workforce - Bulk Add Workers
 // @namespace    https://tampermonkey.net/
-// @version      2.3.0
-// @description  
+// @version      2.3.1
+// @description  test update 2.3.1
 // @match        http://global-autolabeling-service.evad.xiaomi.srv/appen/ui*
 // @require      https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js
 // @grant        none
