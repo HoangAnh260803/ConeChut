@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Job Lookup
 // @namespace    bpo-job-lookup
-// @version      1.8
+// @version      2.2
 // @description  Tra cứu job/tài khoản/cuboid — chạy trên mọi trang web, gọi API trực tiếp (không thao tác giao diện)
 // @match        *://*/*
 // @run-at       document-start
@@ -788,30 +788,21 @@
     try { navigator.clipboard.writeText(t).catch(fb); } catch (e) { fb(); }
   }
   function showShot(cv, w) {
-    var ov = document.createElement('div'), tip = document.createElement('div'), box = document.createElement('div'), im = new Image(), row = document.createElement('div');
-    var bc = document.createElement('button'), bt = document.createElement('button');
-    ov.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;background:rgba(0,0,0,.6);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px';
-    tip.style.cssText = 'color:#fff;font:13px sans-serif;text-align:center;padding:0 12px';
-    box.style.cssText = 'max-width:94vw;max-height:76vh;overflow:auto;background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.5)';
+    var ov = document.createElement('div'), box = document.createElement('div'), im = new Image();
+    ov.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center';
+    box.style.cssText = 'max-width:94vw;max-height:94vh;overflow:auto;background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.5)';
     im.style.cssText = 'display:block;max-width:none';
-    im.width = Math.round(w); // hiển thị đúng kích thước thật trên màn hình (ảnh thật có thể nét gấp 1–2 lần)
-    row.style.cssText = 'display:flex;gap:8px';
-    [bc, bt].forEach(function (b) { b.style.cssText = 'padding:5px 18px;border-radius:6px;border:0;cursor:pointer'; });
-    bc.textContent = 'Sao chép ảnh'; bt.textContent = 'Đóng';
+    im.width = Math.round(w); // hiển thị đúng kích thước thật trên màn hình
     function onKey(e) { if (e.key === 'Escape') close(); }
     function close() { ov.remove(); document.removeEventListener('keydown', onKey, true); }
     function copy() {
       cv.toBlob(function (b) {
-        var bad = function () { tip.textContent = 'Không tự copy được — chuột phải vào ảnh → Sao chép hình ảnh'; };
-        try { navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]).then(function () { tip.textContent = '✔ Đã sao chép ảnh vào clipboard — dán (Ctrl+V) ở nơi cần gửi'; }, bad); } catch (e) { bad(); }
+        try { navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]); } catch (e) {} // tự copy ảnh vào clipboard; nếu lỗi thì chuột phải vào ảnh để sao chép
       }, 'image/png');
     }
-    tip.textContent = 'Bấm "Sao chép ảnh" hoặc chuột phải vào ảnh → Sao chép hình ảnh';
-    bc.onclick = copy; bt.onclick = close;
-    ov.onclick = function (e) { if (e.target === ov) close(); };
+    ov.onclick = function (e) { if (e.target === ov) close(); }; // bấm ra ngoài ảnh hoặc nhấn Esc để đóng
     document.addEventListener('keydown', onKey, true);
-    box.appendChild(im); row.appendChild(bc); row.appendChild(bt);
-    ov.appendChild(tip); ov.appendChild(box); ov.appendChild(row);
+    box.appendChild(im); ov.appendChild(box);
     im.onload = function () { document.body.appendChild(ov); copy(); };
     im.src = cv.toDataURL('image/png');
   }
@@ -836,15 +827,17 @@
     var base = 'display:flow-root;max-height:none;overflow:visible;border:0;border-radius:0;box-shadow:none;padding:0;background:#fff;width:' + w + 'px;';
     c.style.cssText = 'position:fixed;left:-99999px;top:0;' + base;
     root.appendChild(c);
-    var h = Math.ceil(c.getBoundingClientRect().height);
-    c.style.cssText = 'position:static;' + base;
+    // Chiều cao = đúng đáy của bảng cuối cùng (cắt bỏ khoảng trắng thừa phía dưới)
+    var gs = c.querySelectorAll('.g'), ct = c.getBoundingClientRect().top;
+    var h = gs.length ? Math.ceil(gs[gs.length - 1].getBoundingClientRect().bottom - ct) : Math.ceil(c.getBoundingClientRect().height);
+    c.style.cssText = 'position:static;' + base + 'height:' + h + 'px;overflow:hidden;';
     var xml = new XMLSerializer().serializeToString(c);
     c.remove();
     // CSS cho ảnh: bỏ media query, giữ bố cục đúng như đang thấy trên màn hình
     var css = CSS_TEXT.replace(/@media\(max-width:860px\)\{[^}]*\{[^}]*\}\}/, '');
     if (window.innerWidth <= 860) css += '#bpl .c{grid-template-columns:1fr}';
-    // Độ nét chuẩn: = tỉ lệ màn hình (tối thiểu 1x, tối đa 2x), giới hạn cạnh dài ≤ 8000px
-    var k = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    // Độ nét cao: tối thiểu 2x, tối đa 3x, giới hạn cạnh dài ≤ 8000px
+    var k = Math.max(2, Math.min(3, (window.devicePixelRatio || 1) * 1.5));
     k = Math.min(k, 8000 / Math.max(w, h));
     var pw = Math.round(w * k), ph = Math.round(h * k);
     var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + pw + '" height="' + ph + '" viewBox="0 0 ' + w + ' ' + h + '"><foreignObject x="0" y="0" width="' + w + '" height="' + h + '"><style>' + css + '</style>' + xml + '</foreignObject></svg>';
