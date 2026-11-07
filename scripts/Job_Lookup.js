@@ -3,7 +3,7 @@
 // @namespace    bpo-job-lookup
 // @version      2.2
 // @description  Tra cứu job/tài khoản/cuboid — chạy trên mọi trang web, gọi API trực tiếp (không thao tác giao diện)
-// @match        *://*/*
+// @match        http://global-autolabeling-service.evad.xiaomi.srv/*
 // @run-at       document-start
 // @grant        GM_getValue
 // @grant        GM_setValue
