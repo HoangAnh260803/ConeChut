@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         ConeChut_v2.8
+// @name         ConeChut_v2.8.2
 // @namespace    local
-// @version      2.8
+// @version      2.8.2
 // @description  no
 // @match        *://global-autolabeling-service.evad.xiaomi.srv/appen/mashup/ssr/tools/lidar.html*
 // @run-at       document-idle
@@ -10,6 +10,12 @@
 (function () {
   'use strict';
   /*@@SAVED_CFG@@*/
+
+/* ============================================================
+ * MODULE: CONFIG (CFG)
+ * Toàn bộ cấu hình mặc định. Khi thêm option mới, chỉ cần sửa
+ * đây và mục MENU_SECTIONS tương ứng.
+ * ============================================================ */
   var SAVED_CFG = {};
   /*@@END@@*/
   var CFG = {
@@ -204,6 +210,14 @@
     snapDelay: 60,
     ctrlLockHeight: true
   };
+
+/* ============================================================
+ * MODULE: GROUND / SNAP (dán sát đất)
+ * groundHeight, fitPlane, refineGround, fitGroundPlane,
+ * tiltedPose, snapOne, doSnap, redMask, onlyRed
+ * Phụ thuộc: ctx, framePoints, curFrame, selectedId, toast,
+ *            recBegin/End, trackFrames, runOnFrames
+ * ============================================================ */
   function groundHeight(pts, flags, cube, cfg) {
     var c = cube.position, d = cube.dimension, th = heading(cube.rotation);
     var cs = Math.cos(th), sn = Math.sin(th);
@@ -425,6 +439,12 @@
       tiltDeg: Math.acos(Math.min(1, up[1])) * 180 / Math.PI };
   }
   window.__fitPlane = fitPlane; window.__tiltedPose = tiltedPose; window.__groundHeight = groundHeight;
+
+/* ============================================================
+ * MODULE: CONTEXT / LOADER
+ * ctx, findLoader, sceneFallback, framePoints
+ * curFrame, selectedId, selIdAny
+ * ============================================================ */
   function ctx() {
     var S = window.lidarInstances, V = window.view;
     return (S && V) ? { S: S, V: V, L: findLoader(S, V) } : null;
@@ -548,6 +568,12 @@
     lastTilt = pose.tiltDeg;
     return res;
   }
+
+/* ============================================================
+ * MODULE: UI UTILS
+ * toast, esc, kdisp, synthKey, ensureNavGuard,
+ * bindKeyCapture, mouseSpec, runMacro
+ * ============================================================ */
   function toast(msg, ms) { console.log('[snap]', msg); var d = document.createElement('div');
     d.textContent = msg; d.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);background:#fff3f8;color:#5a2a40;padding:8px 16px;border-radius:10px;border:1px solid #f1bdd2;box-shadow:0 6px 20px rgba(120,60,90,.2);z-index:99999;font:13px/1.45 Segoe UI,Arial,sans-serif;max-width:80vw';
     document.body.appendChild(d); setTimeout(function () { d.remove(); }, ms || 1800); }
@@ -615,6 +641,13 @@
     } catch (e) { end(); console.error('[snap] sat dat moi keyframe', e); toast('LỖI dán sát đất: ' + (e && e.message || e), 5000); }
   }
   window.__doSnap = doSnap;
+
+/* ============================================================
+ * MODULE: ATTRIBUTE SYSTEM
+ * getFields/getAllFields, parseLabels, applyAttrs,
+ * setOneAttr, doAttrKey, copyAttrsForward, normAttr
+ * attrFieldOf, reselectBox, ensureBoxAt
+ * ============================================================ */
   var FALLBACK_FIELDS = [
     { name: 'motion_state', type: 'RADIO', label: '动静态 Động/tĩnh',
       options: [{ value: 'moving', label: '运动 đang di chuyển' }, { value: 'parked', label: '静止 đỗ xe' }] },
@@ -694,6 +727,11 @@
     return res;
   }
   window.__applyAttrs = applyAttrs;
+
+/* ============================================================
+ * MODULE: CONE / DELETE
+ * coneIds, deleteConeIds, doDeleteConesModal
+ * ============================================================ */
   function coneIds(S) {
     var re = new RegExp(CFG.coneClassRe, 'i');
     return Object.keys(S.instancesTree).filter(function (i) { return re.test(treeCategory(S.instancesTree[i]) || ''); });
@@ -726,6 +764,12 @@
   }
   window.__deleteConeIds = deleteConeIds;
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+/* ============================================================
+ * MODULE: SETTINGS MENU (Alt+S)
+ * MENU_SECTIONS, CFG_DEF, toggleMenu, cfgSave/cfgInit,
+ * saveToCode, drawNav/drawSec, drawRemap, drawAttrKeys
+ * ============================================================ */
   var MENU_SECTIONS = [
     { t: 'Phím tắt', d: 'Bấm vào ô phím rồi nhấn phím mới (Backspace = tắt phím). Ô đỏ = trùng với chức năng khác.', items: [
       ['#', 'Dán sát'],
@@ -1355,6 +1399,14 @@
   if (CFG.headSideGap == null) CFG.headSideGap = 0;
   CFG.headAlign = true;
   CFG.headEveryFrame = false;
+
+/* ============================================================
+ * MODULE: HEAD / CHAIN SNAP
+ * eulerMat, mulV/mulTV, headSnapPos, doHeadSnap,
+ * chainSnapPos, doChainSnap
+ * Phụ thuộc: ctx, selectedId, curFrame, trackFrames,
+ *            runOnFrames, toast, recBegin/End
+ * ============================================================ */
   function eulerMat(r){
     var a=Math.cos(r.x),b=Math.sin(r.x),c=Math.cos(r.y),d=Math.sin(r.y),e=Math.cos(r.z),f=Math.sin(r.z);
     return[[c*e,-c*f,d],[a*f+b*e*d,a*e-b*f*d,-b*c],[b*f-a*e*d,b*e+a*f*d,a*c]];
@@ -1675,6 +1727,12 @@
   CFG.alignStep = 180;
   CFG.alignHeading = false;
   CFG.alignCopyTilt = true;
+
+/* ============================================================
+ * MODULE: YAW / ALIGN
+ * eulerFromMat, setHeading, refRotWithYaw,
+ * alignedHeading, doAlignClass
+ * ============================================================ */
   function eulerFromMat(m, ref) {
     var y0 = Math.asin(Math.max(-1, Math.min(1, m[0][2]))), x0, z0;
     if (Math.abs(m[0][2]) < 0.9999999) { x0 = Math.atan2(-m[1][2], m[2][2]); z0 = Math.atan2(-m[0][1], m[0][0]); }
@@ -1744,6 +1802,13 @@
   }
   window.__doAlignClass = doAlignClass;
   var _cam = null, _bmCache = {};
+
+/* ============================================================
+ * MODULE: CAMERA FOCUS (phím 7)
+ * imageSource, camBitmap, projectCast, castVisible,
+ * drawCell, camRender, camFit, camLayout, camDrag,
+ * toggleCams
+ * ============================================================ */
   function camName(src, n) {
     var it = src.list[n] || {};
     var nm = it.camera || it.name || it.sensor || it.cameraName;
@@ -2014,6 +2079,12 @@
   window.__toggleCams = toggleCams;
   /* ===== Bảng thuộc tính (chọn = đổi ngay) ===== */
   var _ap = null;
+
+/* ============================================================
+ * MODULE: ATTR PANEL (phím 8)
+ * apLayout, apRender, apSet, apCopyField, apRelSection,
+ * apChangeClass, apClsOpen/Fill/Pick, toggleAttrPanel
+ * ============================================================ */
   function apHidden() {
     if (_ly.tabNat) return true;
     if (!_ly.max || _ly.max === 'attr') return false;
@@ -2640,6 +2711,13 @@
   }
   window.__toggleAttrPanel = toggleAttrPanel;
   var _convertArm = { t: 0, key: '' }, _seenCats = {}, _ontoSet = {};
+
+/* ============================================================
+ * MODULE: CLASS CONVERT / CYCLE
+ * knownCategories, nrm, reTest, isRiderCat/isConeCat,
+ * convertWith, doConvert, doClassCycle, convertClassTo,
+ * commitClassCycle, fixCargoAfterConvert
+ * ============================================================ */
   function knownCategories(C) {
     var set = {};
     Object.keys(C.S.instancesTree).forEach(function (i) { var c = treeCategory(C.S.instancesTree[i]); if (c) set[c] = 1; });
@@ -2854,6 +2932,12 @@
   }
   window.__doClassCycle = doClassCycle;
   var _ctrlSnap = null;
+
+/* ============================================================
+ * MODULE: CTRL-DRAG SNAP
+ * snapshotFrame, movedFace, lockHeight, snapFace,
+ * snapMove, detectView, onCtrlDown/onCtrlUp
+ * ============================================================ */
   function snapshotFrame(C) {
     var S = C.S, f = curFrame(C), out = {};
     Object.keys(S.instancesTree).forEach(function (id) {
@@ -3087,6 +3171,13 @@
   }
   window.__snapFace = snapFace; window.__movedFace = movedFace;
   var _chk = null;
+
+/* ============================================================
+ * MODULE: CHECK PANEL (Alt+Q)
+ * chkFields, chkScan, chkRender, toggleCheck,
+ * chkRunDir, chkRunSize, chkRunFar, chkRunRoad,
+ * roadFind, roadWalk, camYawProbe
+ * ============================================================ */
   function chkFields(C) {
     var V = C.V, all = [];
     cfgFields(V.labelConfig).forEach(function (f) { all.push({ f: f, src: 'box' }); });
@@ -3144,12 +3235,14 @@
     }).catch(function (e) { return { err: (e && e.message) || String(e) }; });
   }
   function ensureCamFwd(C) {
+    /* dò lỗi (chưa có box / chưa có ảnh…) thì tự thử lại sau 3s thay vì kẹt mãi (trước đây phải bấm "Làm mới") */
+    if (_camFwd && !_camFwd.busy && !_camFwd.fixed && _camFwd.yaw == null && Date.now() - (_camFwd.t || 0) > 3000) _camFwd = null;
     if (_camFwd) return _camFwd;
     if (typeof CFG.chkDirCamYaw === 'number') return (_camFwd = { yaw: CFG.chkDirCamYaw * Math.PI / 180, fixed: true });
-    var st = _camFwd = { busy: true, byF: {} };
+    var st = _camFwd = { busy: true, byF: {}, t: Date.now() };
     camProbeYaw(C, CFG.chkDirCam).then(function (r) {
       if (_camFwd !== st) return;
-      st.busy = false; st.yaw = r.yaw != null ? r.yaw : null; st.err = r.err; st.W = r.W;
+      st.busy = false; st.yaw = r.yaw != null ? r.yaw : null; st.err = r.err; st.W = r.W; st.t = Date.now();
       if (_chk) { try { chkRender(true); } catch (e) { console.error('[snap] kiem tra', e); } }
     });
     return st;
@@ -3328,9 +3421,34 @@
   }
   function roadEntry(st, f, mode) {
     if (!st || typeof st !== 'object') return undefined;
-    var c = mode ? [f + 1, String(f + 1), f, String(f)] : [f, String(f), f + 1, String(f + 1)];
+    /* Chỉ lấy đúng frame đang xét (không fallback sang f±1) */
+    var c = mode ? [f + 1, String(f + 1)] : [f, String(f)];
     for (var i = 0; i < c.length; i++) if (Object.prototype.hasOwnProperty.call(st, c[i])) return st[c[i]];
     return undefined;
+  }
+  var ROAD_EMPTY_STR = /^(null|undefined|nan|\[\s*\]|\{\s*\}|\[\s*(""|'')?\s*\]|\(trống\)|trống)$/i;
+  function roadEmpty(y, opts) {
+    if (y == null) return true;
+    if (typeof y === 'number') return !isFinite(y);
+    if (typeof y === 'string') {
+      var t = y.replace(/[\s\u00a0\u200b-\u200d\u2060\ufeff\u3000]+/g, '');
+      if (!t || ROAD_EMPTY_STR.test(t)) return true;
+      var c0 = t.charAt(0);
+      if (c0 === '[' || c0 === '{') { try { return roadEmpty(JSON.parse(y), opts); } catch (e) {} }
+      return roadNotInOpts(y, opts);
+    }
+    if (Array.isArray(y)) return y.every(function (z) { return roadEmpty(z, opts); });
+    if (typeof y === 'object') {
+      if ('value' in y) return roadEmpty(y.value, opts);
+      if ('label' in y) return roadEmpty(y.label, opts);
+      return Object.keys(y).length === 0;
+    }
+    return roadNotInOpts(y, opts);
+  }
+  function roadNotInOpts(y, opts) {
+    if (!opts || !opts.length) return false;
+    var s = String(y).trim();
+    return !opts.some(function (op) { return op && (String(op.value).trim() === s || String(op.label == null ? '' : op.label).trim() === s); });
   }
   function roadScore(t) {
     t = String(t || '');
@@ -3376,6 +3494,7 @@
   function roadFind(C) {
     var re = new RegExp(CFG.chkRoadRe, 'i'), V = C.V, S = C.S, L = C.L, roots = [V, S, L];
     var nF = S.dataLength != null ? S.dataLength : (S.cubes ? S.cubes.length : 0);
+    if (_road && _road.field && _road.direct && S.frameAttributes === _road.store) return _road;
     if (_road && _road.field) {
       if (_road.owner && _road.key) {
         var cur; try { cur = _road.owner[_road.key]; } catch (e) {}
@@ -3426,6 +3545,12 @@
         mode: roadIdxMode(dStore, nF), hits: roadHits(dStore, dName), cfgKey: '(dữ liệu)', dbg: dbg });
       return (_road = { field: null, dbg: dbg });
     }
+    /* Tool lưu thuộc tính frame tại lidarInstances.frameAttributes[frame] (0-based). Mảng RỖNG nghĩa là mọi frame đều chưa điền
+       -> vẫn phải coi là kho hợp lệ (trước đây bị bỏ qua vì không có key số nên rule báo \"đủ\" giả) */
+    if (S.frameAttributes && typeof S.frameAttributes === 'object') {
+      return (_road = { field: fld, nm: fld.name, store: S.frameAttributes, owner: S, key: 'frameAttributes', direct: true,
+        mode: 0, hits: roadHits(S.frameAttributes, fld.name), cfgKey: from, dbg: dbg });
+    }
     var pick = null, best = -Infinity;
     stores.forEach(function (s) {
       var h = roadHits(s.store, fld.name), cnt = roadNumKeys(s.store);
@@ -3444,20 +3569,30 @@
     var C = ctx(); if (!C) return null; _road = null; var x = roadFind(C);
     console.log('[snap] thuoc tinh duong (frame attribute)', x.field ? { truong: x.field.name, label: x.field.label, cauHinhTuKhoa: x.cfgKey, khoLuuKhoa: x.key, khoLuu: x.store, danhSoFrame: x.mode ? '1-based' : '0-based', soFrameCoGiaTri: x.hits, ungVien: x.dbg }
       : { loi: 'khong thay truong khop ' + CFG.chkRoadRe, ungVien: x.dbg });
+    if (x.field && x.store) {
+      var S = C.S, n = Math.min(5, S.dataLength != null ? S.dataLength : (S.cubes ? S.cubes.length : 0));
+      var nm = x.nm, mode = x.mode;
+      var samples = [];
+      for (var f = 0; f < (S.dataLength != null ? S.dataLength : (S.cubes ? S.cubes.length : 0)); f++) {
+        var e = roadEntry(x.store, f, mode), v = roadVal(e, nm);
+        samples.push({ frame: f + 1, entry: e, rawValue: v, typeofV: typeof v, isArray: Array.isArray(v) });
+        if (samples.length >= 5) break;
+      }
+      console.log('[snap] __roadDebug mau gia tri 5 frame dau:', samples);
+    }
     return x;
   };
   function chkRunRoad(C, R10) {
     var S = C.S, x = roadFind(C);
-    if (!x.field) { R10.note = 'Không thấy trường thuộc tính đường trong frame attribute (tìm theo tên/nhãn: CFG.chkRoadRe) – chạy __roadDebug() trong Console (F12) và gửi kết quả'; return; }
-    if (!x.store) { R10.note = 'Không đọc được thuộc tính đường của job – chạy __roadDebug() trong Console (F12) và gửi kết quả'; return; }
+    if (!x.field) { R10.note = 'Không thấy trường thuộc tính đường trong frame attribute (tìm theo tên/nhãn: CFG.chkRoadRe) – chạy __roadDebug() trong Console (F12) và gửi kết quả'; R10.fail = true; return; }
+    if (!x.store) { R10.note = 'KHÔNG ĐỌC ĐƯỢC giá trị thuộc tính đường của các frame (chưa kiểm tra được) – chạy __roadDebug() trong Console (F12) và gửi kết quả'; R10.fail = true; return; }
     var nm = x.nm, n = S.dataLength != null ? S.dataLength : (S.cubes ? S.cubes.length : 0);
     var mode = x.mode != null ? x.mode : roadIdxMode(x.store, n), bad = 0;
     var names = [nm]; if (x.field && x.field.label && x.field.label !== nm) names.push(x.field.label);
     for (var f = 0; f < n; f++) {
       var e = roadEntry(x.store, f, mode), v = undefined;
       for (var a = 0; a < names.length && v === undefined; a++) v = roadVal(e, names[a]);
-      var empty = v == null || (typeof v === 'string' && !v.trim()) ||
-        (Array.isArray(v) && v.every(function (y) { return y == null || (typeof y === 'string' && !y.trim()); }));
+      var empty = roadEmpty(v, x.field && x.field.options);
       if (empty) {
         bad++;
         R10.items[f] = { id: '', cat: '', number: f + 1, frames: [f], sample: { txt: '' } };
@@ -3662,7 +3797,7 @@
       + '</div>';
     res.rules.forEach(function (r) {
       var ids = Object.keys(r.items).filter(function (id) { if (ig.indexOf(r.key + ':' + id) < 0) return true; igN++; return false; }); total += ids.length; var pend = r.dir && r.cam && r.cam.yaw == null;
-      h += '<div style="margin-top:6px;color:' + (pend ? '#9b7686' : ids.length ? '#d6456f' : '#3f9b73') + ';font-weight:bold">' + (pend ? '… ' : ids.length ? '⚠ ' : '✓ ') + esc(r.name) + ' (' + ids.length + (r.key === 'r10' ? ' frame' : ' id') + ')</div>';
+      h += '<div style="margin-top:6px;color:' + (pend ? '#9b7686' : (ids.length || r.fail) ? '#d6456f' : '#3f9b73') + ';font-weight:bold">' + (pend ? '… ' : (ids.length || r.fail) ? '⚠ ' : '✓ ') + esc(r.name) + (r.fail ? ' (CHƯA KIỂM TRA ĐƯỢC)' : ' (' + ids.length + (r.key === 'r10' ? ' frame' : ' id') + ')') + '</div>';
       if (r.note) h += '<div style="color:#9b7686;margin-left:12px">' + esc(r.note) + '</div>';
       if (r.key === 'r10' && ids.length) h += '<div style="color:#b0537c;margin-left:12px">Frame thiếu: ' + esc(chkRanges(ids.map(function (k) { return r.items[k].frames[0]; }))) + '</div>';
       if (pend) { h += '<div style="color:#9b7686;margin-left:12px">' + (r.cam.busy ? 'Đang dò hướng camera ' + (CFG.chkDirCam + 1) + '…' : 'Bỏ qua: ' + esc(r.cam.err || '?')) + '</div>'; return; }
@@ -3692,7 +3827,10 @@
       var t = S.instancesTree[id]; if (t && t.cubes) k += Object.keys(t.cubes).length;
       for (var i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
     });
-    return h + ':' + k;
+    /* thuộc tính frame (场景标签/đường): sửa là panel tự cập nhật, không cần bấm làm mới */
+    var fa = ''; try { fa = JSON.stringify(S.frameAttributes) || ''; } catch (e) {}
+    var h2 = 0; for (var j = 0; j < fa.length; j++) h2 = (h2 * 31 + fa.charCodeAt(j)) | 0;
+    return h + ':' + k + ':' + fa.length + ':' + h2;
   }
   function chkNotify() {
     if (!_chk || !CFG.chkAutoRefresh) return;
@@ -3708,7 +3846,7 @@
     var BT = 'background:#fff;color:#7a3552;border:1px solid #efc3d3;border-radius:6px;padding:2px 10px;cursor:pointer';
     host.innerHTML = '<style>.__snapChk ::-webkit-scrollbar{width:9px;height:9px}.__snapChk ::-webkit-scrollbar-thumb{background:#f1bfd2;border-radius:6px}.__snapChk ::-webkit-scrollbar-thumb:hover{background:#e79ab8}.__snapChk ::-webkit-scrollbar-track{background:transparent}.__snapChk button:hover{background:#fde4ee !important;color:#6a2f48 !important}</style>'
       + '<div class="bar" style="display:flex;align-items:center;gap:6px;padding:9px 12px;border-bottom:1px solid #f1c4d5;background:#fde4ee;cursor:move;user-select:none">'
-      + '<b class="t" style="flex:1;color:#7a3552;font-weight:600;font-size:13px"></b><button class="rf" style="' + BT + '">Làm mới</button>'
+      + '<b class="t" style="flex:1;color:#7a3552;font-weight:600;font-size:13px"></b>'
       + '<button class="x" style="' + BT + '">✕</button></div>'
       + '<div class="b" style="overflow:auto;padding:8px 12px 12px"></div>';
     ['mousedown', 'wheel', 'contextmenu', 'keydown'].forEach(function (ev) { host.addEventListener(ev, function (e) { e.stopPropagation(); }); });
@@ -3720,10 +3858,9 @@
         if (!_chk || document.hidden) return;
         var c1 = ctx(); if (!c1) return; var sg = ''; try { sg = chkSig(c1); } catch (e) { return; }
         if (sg !== _chk.sig) { _chk.sig = sg; chkNotify(); }
-      }, 1500);
+      }, 1000);
     }
     host.querySelector('.x').onclick = toggleCheck;
-    host.querySelector('.rf').onclick = function () { _camFwd = null; chkRender(); try { var c2 = ctx(); if (c2) _chk.sig = chkSig(c2); } catch (e) {} };
     host.querySelector('.bar').addEventListener('mousedown', function (e) {
       if (e.button !== 0 || e.target.tagName === 'BUTTON') return;
       var r = host.getBoundingClientRect(), sx = e.clientX, sy = e.clientY;
@@ -3737,6 +3874,12 @@
 
   /* ── BỘ LỌC BOX (phím 9): điều khiển bộ lọc CÓ SẴN của nền tảng (nút phễu -> hộp thoại Filter) ── */
   var _fp = null;
+
+/* ============================================================
+ * MODULE: FILTER PANEL (phím 9)
+ * fpRoots, fpFind, fpFunnel, fpFibers,
+ * fpBuild, fpApply, toggleFilterPanel
+ * ============================================================ */
   function fpRoots() {
     var out = [document];
     /* đi lên các trang cha cùng origin (tool có thể chạy trong iframe còn nút phễu ở trang ngoài) */
@@ -3876,6 +4019,12 @@
     });
   }
   window.__toggleFilterPanel = toggleFilterPanel; window.__fpApply = fpApply; window.__fpFibers = fpFibers; window.__fpFunnel = fpFunnel;
+
+/* ============================================================
+ * MODULE: ID NAVIGATION
+ * boxPointCount, gotoBestFrame, afterSelect,
+ * sidebarTiles, tileId, selectNeighbor
+ * ============================================================ */
   function boxPointCount(C, id, f) {
     var cube = C.S.instancesTree[id] && C.S.instancesTree[id].cubes[f]; if (!cube) return null;
     var pc = cube.pointCount; if (pc && typeof pc.lidar === 'number' && pc.lidar > 0) return pc.lidar;
@@ -3947,6 +4096,12 @@
     toast(dir > 0 ? 'Đã ở ô cuối danh sách' : 'Đã ở ô đầu danh sách', 1500);
   }
   window.__selectNeighbor = selectNeighbor;
+
+/* ============================================================
+ * MODULE: EDGE FIT (sát rìa xe)
+ * bodyEdges, estimateYaw, sideLineFit, sideLine,
+ * edgeFit, doEdgeFit
+ * ============================================================ */
   function bodyEdges(pts, D, axisLat) {
     var a = axisLat ? 0 : 2, v;
     if (axisLat) {
@@ -4119,6 +4274,11 @@
     } catch (e) { console.error('[snap] sat ria xe', e); toast('LỖI sát rìa xe: ' + (e && e.message || e), 5000); }
   }
   window.__doEdgeFit = doEdgeFit;
+
+/* ============================================================
+ * MODULE: TAIL FIT (khít đầu/đuôi)
+ * endTarget, tailFit, tailFitFrames, doTail, tailKey
+ * ============================================================ */
   function endTarget(zs, h2) {
     if (zs.length < 8) return null;
     var k0 = -1;
@@ -4242,6 +4402,13 @@
   }
   function tailKey(all, mode) { doTail(all, mode); }
   window.__doTail = doTail;
+
+/* ============================================================
+ * MODULE: SIZE / AUTO
+ * anchorSigns, anchorPos, sizeFix, hookUnify,
+ * doUnifyTail, ptCloudBBox, autoSizeTrack,
+ * autoFrameA/B, doAuto
+ * ============================================================ */
   function anchorSigns(C, id, f, p) {
     var sg = [0, -1, 0], fp = framePoints(C, f); if (!fp || !p) return sg;
     var R = eulerMat(p.rot), h = [p.dim.x / 2, p.dim.y / 2, p.dim.z / 2], P = fp.pts, F = fp.flags, B = 0.3, c = p.pos, cnt = [[0, 0], [0, 0], [0, 0]];
@@ -4454,6 +4621,12 @@
     } catch (e) { recEnd(rr); console.error('[snap] tu dong hoa', e); toast('LỖI tự động hóa: ' + (e && e.message || e), 5000); }
   }
   window.__doAuto = doAuto;
+
+/* ============================================================
+ * MODULE: DELETE / WIDTH / DIR
+ * allFrames, removeFrames, doDeleteSelected,
+ * doWidthAll, doDirAll, rotWithHeading, rotLocalYaw
+ * ============================================================ */
   function allFrames(C, id) {
     var S = C.S, V = C.V, n = S.dataLength || S.frameLength || V.frameLength || 0, fr = [];
     for (var f = 0; f < n; f++) fr.push(f);
@@ -4575,6 +4748,13 @@
   }
   window.__doDirAll = doDirAll;
   var _undo = [], _rec = null, _restoring = false, UNDO_MAX = 60, _recOK = null, _seq = 0, _platSeq = 0;
+
+/* ============================================================
+ * MODULE: UNDO SYSTEM
+ * vec3, _calc, _emit, _grid, cloneJ,
+ * recBegin/End/Wrap, undoPushPlatform,
+ * installRecorder, doUndo, onZKey
+ * ============================================================ */
   function vec3(o){return o?{x:o.x,y:o.y,z:o.z}:o;}
   function _calc(S,id,f){try{S.calcPointCount&&S.calcPointCount(id,f);}catch(e){}}
   function _emit(S){try{S.emitViewRefresh&&S.emitViewRefresh();}catch(e){}}
@@ -4659,6 +4839,15 @@
     doUndo();
   }
   var _fineBusy = false;
+
+/* ============================================================
+ * MODULE: FINE MOVE (Shift+WASDQE)
+ * finePose, fineDiff, mMul, mT, axisAngle, rotAA,
+ * fineRotStep/Apply, finePoseStep, fineRedispatch,
+ * fineRun, onFineKey, viaTool
+ * MODULE: AXIS LOCK (A/W/S/D/Q/E không Shift)
+ * axisLockStep, axisRun, onAxisKey
+ * ============================================================ */
   function finePose(S, id, f) {
     var e = effCube(S, id, f); if (!e || !e.cube) return null;
     var c = e.cube; return { p: vec3(c.position), r: vec3(c.rotation), d: vec3(c.dimension), R: eulerMat(c.rotation) };
@@ -4892,6 +5081,13 @@
     })();
   }
   window.__viaTool = viaTool;
+
+/* ============================================================
+ * MODULE: LAYOUT SYSTEM (bố cục canvas)
+ * lyGrid, lyRole, lyTag, lyRects, lyCss, lyApply,
+ * lyCustomApply, lyEdit, lyEdDown, lyEdClose,
+ * lyToggleSus, lyMaxToggle, lyInit
+ * ============================================================ */
   var LY_ID = '__snapLayoutCss', LY_MIN = 4,
     LY_ROLES = ['cams', 'rgb', 'focus', 'front', 'top', 'side', 'left', '3d', 'attr'],
     LY_SHOW = { attr: { x: 70, y: 42, w: 30, h: 54 } },
@@ -5509,6 +5705,13 @@
   }
   window.__snapLayout = lyApply;
   /* FPS controls and optional independent 3D redraw loop (ported from TriThucCamLite). */
+
+/* ============================================================
+ * MODULE: FPS
+ * fpsTick, fpsInstall, hookFpsRenderers,
+ * fpsReplay, fps3dRun, applyFps,
+ * install2dDragBoost, toggleFps
+ * ============================================================ */
   var FPSM = { orig: null, origC: null, q: new Map(), seq: 0, timer: 0, last: 0, on: false, draws: 0, frames: 0, el: null, tu: null, rs: [], frameNo: 0, rec: { frame: -1, list: [] }, lastSeq: [], toolDrew: 0, replaying: false, loop3d: false, drag2d: false };
   var NAT_RAF = window.requestAnimationFrame.bind(window);
   (function fpsFrameCount() { FPSM.frames++; NAT_RAF(fpsFrameCount); })();
@@ -5651,6 +5854,12 @@
     toast('Mở khoá FPS vẽ 3D: ' + (CFG.fps3d ? 'BẬT (' + (CFG.fpsTarget === 'screen' ? 'theo màn hình' : CFG.fpsTarget + ' FPS') + ')' : 'TẮT') + (sv ? ' (đã lưu)' : ''), 2500);
   }
   window.__snapFps = { apply: applyFps, state: FPSM, replay: fpsReplay };
+
+/* ============================================================
+ * MODULE: BOOTSTRAP (khởi động)
+ * cfgInit, applyFps, install2dDragBoost,
+ * ACTIONS, key dispatch, event listeners, lyInit
+ * ============================================================ */
   (function wait(t) {
     if (ctx()) {
       cfgInit();
