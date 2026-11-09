@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Job Lookup
 // @namespace    bpo-job-lookup
-// @version      2.2
-// @description  Tra cứu job/tài khoản/cuboid — chạy trên mọi trang web, gọi API trực tiếp (không thao tác giao diện)
-// @match        http://global-autolabeling-service.evad.xiaomi.srv/*
+// @version      2.3
+// @description  Tra cứu job/tài khoản/cuboid — chỉ chạy trên nền tảng Appen (global-autolabeling-service.evad.xiaomi.srv), gọi API trực tiếp (không thao tác giao diện)
+// @match        *://global-autolabeling-service.evad.xiaomi.srv/*
 // @run-at       document-start
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -16,7 +16,7 @@
   // Chạy ở mọi trang (top window). Iframe chỉ chạy khi thuộc host chính (để học API cuboid).
   var MAIN_HOST = 'global-autolabeling-service.evad.xiaomi.srv';
   var ON_MAIN = location.host === MAIN_HOST;
-  if (!ON_MAIN && window.top !== window.self) return;
+  if (!ON_MAIN) return; // chỉ dùng trong nền tảng Appen
 
   /* ===== CẤU HÌNH (chỉnh nếu response của hệ thống khác) ===== */
   var CFG = {
@@ -885,7 +885,14 @@
     qi.addEventListener('keydown', function (e) { if (e.key === 'Enter') run(); });
     $('#bpl-t').onclick = function () { panel.classList.toggle('min'); };
     $('#bpl-title').onclick = function () { panel.classList.toggle('min'); };
-    document.addEventListener('keydown', function (e) { if (e.altKey && (e.key === 'b' || e.key === 'B')) host.style.display = host.style.display === 'none' ? 'block' : 'none'; }, true); // Alt+B: ẩn/hiện
+    function toggleTool() { host.style.display = host.style.display === 'none' ? 'block' : 'none'; }
+    document.addEventListener('keydown', function (e) {
+      if (e.altKey && (e.key === 'b' || e.key === 'B')) { toggleTool(); return; } // Alt+B: ẩn/hiện
+      if (e.key !== '1' || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey || e.repeat) return;
+      var t = (e.composedPath && e.composedPath()[0]) || e.target; // phím 1: ẩn/hiện, bỏ qua khi đang gõ vào ô nhập
+      if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+      e.preventDefault(); toggleTool();
+    }, true);
     var h = $('#bpl-h'), dx, dy, drag = false;
     h.addEventListener('mousedown', function (e) { drag = true; var r = panel.getBoundingClientRect(); dx = e.clientX - r.left; dy = e.clientY - r.top; });
     document.addEventListener('mousemove', function (e) { if (!drag) return; panel.style.left = (e.clientX - dx) + 'px'; panel.style.top = (e.clientY - dy) + 'px'; panel.style.right = 'auto'; panel.style.bottom = 'auto'; });
