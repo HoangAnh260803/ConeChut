@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         ConeChut_v2.8.2
+// @name         ConeChut_v2.8.4
 // @namespace    local
-// @version      2.8.2
+// @version      2.8.4
 // @description  no
 // @match        *://global-autolabeling-service.evad.xiaomi.srv/appen/mashup/ssr/tools/lidar.html*
 // @run-at       document-idle
@@ -9,13 +9,47 @@
 // ==/UserScript==
 (function () {
   'use strict';
-  /*@@SAVED_CFG@@*/
+/* ============================================================
+ * MỤC LỤC MODULE — tìm bằng Ctrl+F: @MODULE[tên-phím]   (vd: @MODULE[alt+q])
+ * Mỗi tag là phím mặc định của chức năng (đổi phím được trong menu alt+s).
+ * Bản chia module: tag trùng tên file trong src/ (vd @MODULE[alt+q] = src/alt+q.js).
+ * Muốn sửa/thêm một chức năng: chỉ cần mở đúng module của phím đó.
+ *
+ *  @MODULE[cfg]            Cấu hình mặc định (CFG, CFG_DEF) – sửa mặc định/phím gán nhanh ở đây
+ *  @MODULE[b]              Dán sát đất            (b, shift+b, alt+d)
+ *  @MODULE[core:ctx]       Lõi: ctx / loader / điểm lidar / frame hiện tại
+ *  @MODULE[core:ui]        Lõi: toast, bắt phím, macro
+ *  @MODULE[3/4/g/h/j/l]    Thuộc tính + phím gán nhanh (attrKeys)
+ *  @MODULE[alt+s:cone]     Xoá cọc tiêu (nút trong menu alt+s)
+ *  @MODULE[alt+s]          Menu cài đặt, bảng phím tắt, bảng gán thuộc tính nhanh
+ *  @MODULE[alt+g]          Kéo đầu xe vào thân / xe sau theo xe trước (alt+g, shift+alt+g, shift+g, ctrl+shift+g)
+ *  @MODULE[core:yaw]       Lõi: căn hướng (yaw/heading)
+ *  @MODULE[7]              FOCUS 7 camera
+ *  @MODULE[8]              Bảng thuộc tính
+ *  @MODULE[6]              Đổi class (6, arrowup, arrowdown)
+ *  @MODULE[ctrl+drag]      Ctrl + kéo khít
+ *  @MODULE[alt+q]          Bảng kiểm tra nhãn (r1…r11: hướng, kích thước, xa, thuộc tính đường, đầu xe lòi…)
+ *  @MODULE[9]              Bộ lọc box
+ *  @MODULE[left/right]     Chuyển ID kế/trước
+ *  @MODULE[v]              Sát rìa xe (v hoặc ';' theo CFG, shift+v)
+ *  @MODULE[,/.]            Khít đầu / khít đuôi (, . shift+, shift+.)
+ *  @MODULE[alt+a]          Tự động hoá + đồng nhất kích thước (alt+a, shift+alt+a, alt+u)
+ *  @MODULE[delete/i/alt+f] Xoá id, chiều rộng cố định, đồng bộ chiều đầu/đuôi
+ *  @MODULE[alt+z]          Hoàn tác (alt+z, z)
+ *  @MODULE[shift+wasdqe]   Di chuyển mịn  ┐ chung một khối
+ *  @MODULE[wasdqe]         Khoá trục xoay ┘
+ *  @MODULE[alt+l]          Bố cục canvas
+ *  @MODULE[alt+u:fps]      Mở khoá FPS vẽ 3D
+ *  @MODULE[init]           Khởi động: bảng ACTIONS (phím → hàm), event listener
+ * ============================================================ */
 
 /* ============================================================
- * MODULE: CONFIG (CFG)
+ * @MODULE[cfg]  CONFIG (CFG)
  * Toàn bộ cấu hình mặc định. Khi thêm option mới, chỉ cần sửa
  * đây và mục MENU_SECTIONS tương ứng.
+ * (Header này nằm NGOÀI cặp marker SAVED_CFG vì "lưu vào code" ghi đè mọi thứ giữa hai marker.)
  * ============================================================ */
+  /*@@SAVED_CFG@@*/
   var SAVED_CFG = {};
   /*@@END@@*/
   var CFG = {
@@ -138,9 +172,9 @@
     attrKeys: [
       {k:'3',scope:'frame',sets:[{field:'role:cipo',val:'CIPO3'}]},
       {k:'4',scope:'frame',sets:[{field:'role:cipo',val:'CIPO4'}]},
-      {k:'g',scope:'frame',sets:[{field:'role:valid',val:'__cycle__'},{field:'role:occ',val:'__cycle__'}]},
-      {k:'h',scope:'frame',sets:[{field:'role:valid',val:'__cycle__'},{field:'role:occ',val:'__cycle__'}]},
-      {k:'j',scope:'frame',sets:[{field:'role:cipo',val:'CIPO4'},{field:'role:valid',val:'__cycle__'},{field:'role:occ',val:'__cycle__'}]},
+      {k:'g',scope:'frame',sets:[{field:'role:valid',val:'yes'},{field:'role:occ',val:'slightly occluded'},{field:'name:subname',val:'None'},{field:'name:jira_key_obj',val:'False'}]},
+      {k:'h',scope:'frame',sets:[{field:'role:valid',val:'yes'},{field:'role:occ',val:'occluded'},{field:'name:subname',val:'None'},{field:'name:jira_key_obj',val:'False'}]},
+      {k:'j',scope:'frame',sets:[{field:'role:cipo',val:'CIPO4'},{field:'role:valid',val:'no'},{field:'role:occ',val:'heavily occluded'},{field:'name:subname',val:'None'},{field:'name:jira_key_obj',val:'False'}]},
       {k:'l',scope:'copyall',sets:[]}
     ],
     keyFilterPanel: '9',
@@ -169,6 +203,7 @@
     chkHeadWithTruck: ['卡车', '货车', '油罐车'],
     chkHeadWithTrailer: ['卡车-挂车', '货车-挂车', '油罐车-挂车'],
     chkHeadTruckMax: 3, chkHeadTrailerMin: 5, chkHeadTrailerMax: 7,
+    chkHeadOutTol: 0.05,
     chkAutoRefresh: true,
     chkAutoDelay: 700,
     chkDirClassRe: '锥桶|水马|障碍物|防撞柱|防撞桶|三角警示牌|锥|cone|路障|cọc|coc tieu|chướng ngại|chuong ngai|water-?hoesr|rào chắn|rao chan|tam giác|tam giac',
@@ -212,7 +247,8 @@
   };
 
 /* ============================================================
- * MODULE: GROUND / SNAP (dán sát đất)
+ * @MODULE[b]  DÁN SÁT ĐẤT
+ * Phím: b (keySnap) · shift+b (keySnapAll, cả track) · alt+d (keyRed, bật/tắt chỉ dùng đất đỏ)
  * groundHeight, fitPlane, refineGround, fitGroundPlane,
  * tiltedPose, snapOne, doSnap, redMask, onlyRed
  * Phụ thuộc: ctx, framePoints, curFrame, selectedId, toast,
@@ -441,7 +477,7 @@
   window.__fitPlane = fitPlane; window.__tiltedPose = tiltedPose; window.__groundHeight = groundHeight;
 
 /* ============================================================
- * MODULE: CONTEXT / LOADER
+ * @MODULE[core:ctx]  CONTEXT / LOADER (lõi, không có phím)
  * ctx, findLoader, sceneFallback, framePoints
  * curFrame, selectedId, selIdAny
  * ============================================================ */
@@ -570,7 +606,7 @@
   }
 
 /* ============================================================
- * MODULE: UI UTILS
+ * @MODULE[core:ui]  UI UTILS (lõi, không có phím)
  * toast, esc, kdisp, synthKey, ensureNavGuard,
  * bindKeyCapture, mouseSpec, runMacro
  * ============================================================ */
@@ -643,7 +679,8 @@
   window.__doSnap = doSnap;
 
 /* ============================================================
- * MODULE: ATTRIBUTE SYSTEM
+ * @MODULE[3/4/g/h/j/l]  THUỘC TÍNH / PHÍM GÁN NHANH
+ * Phím: các phím gán thuộc tính nhanh (CFG.attrKeys; mặc định 3 4 g h j l — cấu hình trong menu alt+s)
  * getFields/getAllFields, parseLabels, applyAttrs,
  * setOneAttr, doAttrKey, copyAttrsForward, normAttr
  * attrFieldOf, reselectBox, ensureBoxAt
@@ -729,7 +766,7 @@
   window.__applyAttrs = applyAttrs;
 
 /* ============================================================
- * MODULE: CONE / DELETE
+ * @MODULE[alt+s:cone]  XOÁ CỌC TIÊU (nút trong menu alt+s)
  * coneIds, deleteConeIds, doDeleteConesModal
  * ============================================================ */
   function coneIds(S) {
@@ -766,7 +803,8 @@
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
 /* ============================================================
- * MODULE: SETTINGS MENU (Alt+S)
+ * @MODULE[alt+s]  MENU CÀI ĐẶT
+ * Phím: alt+s (keyMenu). Gồm cả bảng phím tắt & bảng gán thuộc tính nhanh (drawRemap, drawAttrKeys)
  * MENU_SECTIONS, CFG_DEF, toggleMenu, cfgSave/cfgInit,
  * saveToCode, drawNav/drawSec, drawRemap, drawAttrKeys
  * ============================================================ */
@@ -1401,7 +1439,8 @@
   CFG.headEveryFrame = false;
 
 /* ============================================================
- * MODULE: HEAD / CHAIN SNAP
+ * @MODULE[alt+g]  KÉO ĐẦU XE VÀO THÂN / XE SAU THEO XE TRƯỚC
+ * Phím: alt+g (keyHead) · shift+alt+g (keyHeadAll) · shift+g (keyChain) · ctrl+shift+g (keyChainAll)
  * eulerMat, mulV/mulTV, headSnapPos, doHeadSnap,
  * chainSnapPos, doChainSnap
  * Phụ thuộc: ctx, selectedId, curFrame, trackFrames,
@@ -1729,7 +1768,7 @@
   CFG.alignCopyTilt = true;
 
 /* ============================================================
- * MODULE: YAW / ALIGN
+ * @MODULE[core:yaw]  YAW / ALIGN (tiện ích căn hướng, không có phím riêng)
  * eulerFromMat, setHeading, refRotWithYaw,
  * alignedHeading, doAlignClass
  * ============================================================ */
@@ -1804,7 +1843,8 @@
   var _cam = null, _bmCache = {};
 
 /* ============================================================
- * MODULE: CAMERA FOCUS (phím 7)
+ * @MODULE[7]  FOCUS 7 CAMERA
+ * Phím: 7 (keyCams)
  * imageSource, camBitmap, projectCast, castVisible,
  * drawCell, camRender, camFit, camLayout, camDrag,
  * toggleCams
@@ -2081,7 +2121,8 @@
   var _ap = null;
 
 /* ============================================================
- * MODULE: ATTR PANEL (phím 8)
+ * @MODULE[8]  BẢNG THUỘC TÍNH
+ * Phím: 8 (keyAttrPanel)
  * apLayout, apRender, apSet, apCopyField, apRelSection,
  * apChangeClass, apClsOpen/Fill/Pick, toggleAttrPanel
  * ============================================================ */
@@ -2713,7 +2754,8 @@
   var _convertArm = { t: 0, key: '' }, _seenCats = {}, _ontoSet = {};
 
 /* ============================================================
- * MODULE: CLASS CONVERT / CYCLE
+ * @MODULE[6]  ĐỔI CLASS
+ * Phím: 6 (keyConvert, sedan ⇄ SUV / cọc ⇄ người cưỡi) · arrowup/arrowdown (keyClassPrev/Next, xe tải)
  * knownCategories, nrm, reTest, isRiderCat/isConeCat,
  * convertWith, doConvert, doClassCycle, convertClassTo,
  * commitClassCycle, fixCargoAfterConvert
@@ -2934,7 +2976,8 @@
   var _ctrlSnap = null;
 
 /* ============================================================
- * MODULE: CTRL-DRAG SNAP
+ * @MODULE[ctrl+drag]  CTRL + KÉO KHÍT
+ * Phím: giữ ctrl rồi kéo mặt box (CFG.ctrlDragSnap)
  * snapshotFrame, movedFace, lockHeight, snapFace,
  * snapMove, detectView, onCtrlDown/onCtrlUp
  * ============================================================ */
@@ -3173,7 +3216,8 @@
   var _chk = null;
 
 /* ============================================================
- * MODULE: CHECK PANEL (Alt+Q)
+ * @MODULE[alt+q]  BẢNG KIỂM TRA NHÃN
+ * Phím: alt+q (keyCheck). Mỗi rule là một chkRun*: dir (hướng), size, far, road (thuộc tính đường), headout (đầu xe lòi)…
  * chkFields, chkScan, chkRender, toggleCheck,
  * chkRunDir, chkRunSize, chkRunFar, chkRunRoad,
  * roadFind, roadWalk, camYawProbe
@@ -3598,7 +3642,59 @@
         R10.items[f] = { id: '', cat: '', number: f + 1, frames: [f], sample: { txt: '' } };
       }
     }
-    R10.note = 'Trường "' + (x.field.label || nm) + '"' + (mode ? ' (frame đánh số từ 1)' : '') + ' – thiếu ' + bad + '/' + n + ' frame';
+  }
+  /* Đầu xe (大车车头) lòi ra ngoài / to hơn thân xe (mọi cạnh, mọi kích thước):
+     - lòi ngang (x), lòi trước/sau (z), lòi trên/dưới (y): 4 góc + đỉnh/đáy box đầu xe chiếu vào hệ toạ độ box thân
+     - to hơn thân: rộng/cao/dài của đầu xe lớn hơn của thân
+     Thân xe tải/hàng/bồn (chkHeadWithTruck): kiểm tra đủ cả x, y, z.
+     Rơ móc (chkHeadWithTrailer): đầu xe nằm phía trước rơ móc nên bỏ qua chiều dọc (z), chỉ kiểm tra rộng (x) và cao (y). */
+  function chkHeadOverflow(h, b, trailer) {
+    var hh = heading(h.rotation), sh = Math.sin(hh), ch = Math.cos(hh), hb = heading(b.rotation), sb = Math.sin(hb), cb = Math.cos(hb);
+    var hx = h.dimension.x / 2, hz = h.dimension.z / 2, bx = b.dimension.x / 2, bz = b.dimension.z / 2, ox = 0, oz = 0;
+    [[-1, -1], [-1, 1], [1, -1], [1, 1]].forEach(function (q) {
+      var a = q[0] * hx, c = q[1] * hz;
+      var wx = h.position.x + a * ch + c * sh, wz = h.position.z - a * sh + c * ch;
+      var dx = wx - b.position.x, dz = wz - b.position.z;
+      var u = dx * cb - dz * sb, v = dx * sb + dz * cb;
+      ox = Math.max(ox, Math.abs(u) - bx); oz = Math.max(oz, Math.abs(v) - bz);
+    });
+    var hTop = h.position.y + h.dimension.y / 2, hBot = h.position.y - h.dimension.y / 2;
+    var bTop = b.position.y + b.dimension.y / 2, bBot = b.position.y - b.dimension.y / 2;
+    return { x: ox, z: trailer ? 0 : oz, y: Math.max(0, hTop - bTop, bBot - hBot),
+      sx: Math.max(0, h.dimension.x - b.dimension.x), sy: Math.max(0, h.dimension.y - b.dimension.y),
+      sz: trailer ? 0 : Math.max(0, h.dimension.z - b.dimension.z) };
+  }
+  function chkRunHeadOut(S, R11) {
+    var tol = CFG.chkHeadOutTol, heads = Object.keys(CFG.chkSize).filter(function (k) { return CFG.chkSize[k].head; });
+    chkLinkPairs(S).forEach(function (p) {
+      var ca = treeCategory(S.instancesTree[p.a]) || '', cb = treeCategory(S.instancesTree[p.b]) || '', hid, bid, cat;
+      if (heads.indexOf(ca) >= 0 && heads.indexOf(cb) < 0) { hid = p.a; bid = p.b; cat = cb; }
+      else if (heads.indexOf(cb) >= 0 && heads.indexOf(ca) < 0) { hid = p.b; bid = p.a; cat = ca; }
+      else return;
+      var trailer = CFG.chkHeadWithTrailer.indexOf(cat) >= 0;
+      if (!trailer && CFG.chkHeadWithTruck.indexOf(cat) < 0) return;
+      var kf = {}; chkKf(S, hid).concat(chkKf(S, bid)).forEach(function (f) { kf[f] = 1; });
+      var bad = [], m = { x: 0, y: 0, z: 0, sx: 0, sy: 0, sz: 0 };
+      p.frames.forEach(function (f) {
+        if (!kf[f]) return;
+        var eh = effCube(S, hid, f), eb = effCube(S, bid, f); if (!eh || !eb) return;
+        var o = chkHeadOverflow(eh.cube, eb.cube, trailer), hit = false;
+        Object.keys(m).forEach(function (k) { if (o[k] > tol) { hit = true; if (o[k] > m[k]) m[k] = o[k]; } });
+        if (hit) bad.push(f);
+      });
+      if (!bad.length) return;
+      var th = S.instancesTree[hid], parts = [], f2 = function (v) { return v.toFixed(2) + 'm'; };
+      if (m.x > tol) parts.push('lòi ngang ' + f2(m.x));
+      if (m.z > tol) parts.push('lòi trước/sau ' + f2(m.z));
+      if (m.y > tol) parts.push('lòi trên/dưới ' + f2(m.y));
+      var big = [];
+      if (m.sx > tol) big.push('rộng +' + f2(m.sx));
+      if (m.sy > tol) big.push('cao +' + f2(m.sy));
+      if (m.sz > tol) big.push('dài +' + f2(m.sz));
+      if (big.length) parts.push('to hơn thân: ' + big.join(', '));
+      R11.items[hid + '|' + bid] = { id: hid, cat: heads.indexOf(ca) >= 0 ? ca : cb, number: (th.number != null ? th.number : hid) + ' ⇄ ' + (S.instancesTree[bid].number != null ? S.instancesTree[bid].number : bid),
+        frames: bad, sample: { txt: (heads.indexOf(ca) >= 0 ? ca : cb) + ' ⇄ ' + cat + ': ' + parts.join('; ') } };
+    });
   }
   function chkScan(C) {
     chkCacheReset();
@@ -3624,6 +3720,7 @@
     rules.push({ key: 'r8', custom: true, need: [], name: 'Check kích thước' });
     rules.push({ key: 'r9', custom: true, need: [], name: 'Box ngoài ' + CFG.chkFarDist + 'm' });
     rules.push({ key: 'r10', custom: true, need: [], name: 'Thiếu thuộc tính đường (场景标签)' });
+    rules.push({ key: 'r11', custom: true, need: [], name: 'Đầu xe lòi ra ngoài thân xe' });
     rules.forEach(function (r) { r.items = {}; r.missing = r.need.filter(function (k) { return !F[k]; }); });
     Object.keys(S.instancesTree).forEach(function (id) {
       var tr = S.instancesTree[id], cat = treeCategory(tr) || '', clsOK = {};
@@ -3718,6 +3815,8 @@
     if (R9) chkRunFar(S, R9);
     var R10 = rules.filter(function (r) { return r.key === 'r10'; })[0];
     if (R10) chkRunRoad(C, R10);
+    var R11 = rules.filter(function (r) { return r.key === 'r11'; })[0];
+    if (R11) chkRunHeadOut(S, R11);
     return { rules: rules, F: F };
   }
   function countValid(C, F) {
@@ -3876,7 +3975,8 @@
   var _fp = null;
 
 /* ============================================================
- * MODULE: FILTER PANEL (phím 9)
+ * @MODULE[9]  BỘ LỌC BOX
+ * Phím: 9 (keyFilterPanel)
  * fpRoots, fpFind, fpFunnel, fpFibers,
  * fpBuild, fpApply, toggleFilterPanel
  * ============================================================ */
@@ -4021,7 +4121,8 @@
   window.__toggleFilterPanel = toggleFilterPanel; window.__fpApply = fpApply; window.__fpFibers = fpFibers; window.__fpFunnel = fpFunnel;
 
 /* ============================================================
- * MODULE: ID NAVIGATION
+ * @MODULE[left/right]  CHUYỂN ID
+ * Phím: arrowright (keyNextId) · arrowleft (keyPrevId)
  * boxPointCount, gotoBestFrame, afterSelect,
  * sidebarTiles, tileId, selectNeighbor
  * ============================================================ */
@@ -4098,7 +4199,8 @@
   window.__selectNeighbor = selectNeighbor;
 
 /* ============================================================
- * MODULE: EDGE FIT (sát rìa xe)
+ * @MODULE[v]  SÁT RÌA XE
+ * Phím: v (keyEdge; mặc định trong CFG là ';', đổi trong alt+s) · shift+v (keyEdgeAll)
  * bodyEdges, estimateYaw, sideLineFit, sideLine,
  * edgeFit, doEdgeFit
  * ============================================================ */
@@ -4276,7 +4378,8 @@
   window.__doEdgeFit = doEdgeFit;
 
 /* ============================================================
- * MODULE: TAIL FIT (khít đầu/đuôi)
+ * @MODULE[,/.]  KHÍT ĐẦU / KHÍT ĐUÔI
+ * Phím: , (keyFitHead) · . (keyFitTail) · shift+, (keyFitHeadAll) · shift+. (keyFitTailAll)
  * endTarget, tailFit, tailFitFrames, doTail, tailKey
  * ============================================================ */
   function endTarget(zs, h2) {
@@ -4404,7 +4507,8 @@
   window.__doTail = doTail;
 
 /* ============================================================
- * MODULE: SIZE / AUTO
+ * @MODULE[alt+a]  TỰ ĐỘNG HOÁ + ĐỒNG NHẤT KÍCH THƯỚC
+ * Phím: alt+a (keyAuto) · shift+alt+a (keyAutoAll) · alt+u (keyUnifyTail, đồng nhất kích thước + khít đầu/đuôi)
  * anchorSigns, anchorPos, sizeFix, hookUnify,
  * doUnifyTail, ptCloudBBox, autoSizeTrack,
  * autoFrameA/B, doAuto
@@ -4623,7 +4727,8 @@
   window.__doAuto = doAuto;
 
 /* ============================================================
- * MODULE: DELETE / WIDTH / DIR
+ * @MODULE[delete/i/alt+f]  XOÁ ID / CHIỀU RỘNG / ĐỒNG BỘ CHIỀU
+ * Phím: delete (keyDeleteAll) · i (keyWidth) · alt+f (keyDirAll)
  * allFrames, removeFrames, doDeleteSelected,
  * doWidthAll, doDirAll, rotWithHeading, rotLocalYaw
  * ============================================================ */
@@ -4750,7 +4855,8 @@
   var _undo = [], _rec = null, _restoring = false, UNDO_MAX = 60, _recOK = null, _seq = 0, _platSeq = 0;
 
 /* ============================================================
- * MODULE: UNDO SYSTEM
+ * @MODULE[alt+z]  HOÀN TÁC
+ * Phím: alt+z (keyUndo) · z (onZKey, hoàn tác thao tác gần nhất của script)
  * vec3, _calc, _emit, _grid, cloneJ,
  * recBegin/End/Wrap, undoPushPlatform,
  * installRecorder, doUndo, onZKey
@@ -4841,12 +4947,13 @@
   var _fineBusy = false;
 
 /* ============================================================
- * MODULE: FINE MOVE (Shift+WASDQE)
+ * @MODULE[shift+wasdqe]  DI CHUYỂN MỊN (Shift+A/W/S/D/Q/E)
  * finePose, fineDiff, mMul, mT, axisAngle, rotAA,
  * fineRotStep/Apply, finePoseStep, fineRedispatch,
  * fineRun, onFineKey, viaTool
- * MODULE: AXIS LOCK (A/W/S/D/Q/E không Shift)
+ * @MODULE[wasdqe]  KHOÁ TRỤC XOAY (A/W/S/D/Q/E không Shift)
  * axisLockStep, axisRun, onAxisKey
+ * (hai module dùng chung hàm xoay nên nằm chung một khối; onFineKey nằm sau phần axis)
  * ============================================================ */
   function finePose(S, id, f) {
     var e = effCube(S, id, f); if (!e || !e.cube) return null;
@@ -5083,7 +5190,8 @@
   window.__viaTool = viaTool;
 
 /* ============================================================
- * MODULE: LAYOUT SYSTEM (bố cục canvas)
+ * @MODULE[alt+l]  BỐ CỤC CANVAS
+ * Phím: alt+l (keyLayoutToggle, tạm tắt/bật bố cục tùy chỉnh)
  * lyGrid, lyRole, lyTag, lyRects, lyCss, lyApply,
  * lyCustomApply, lyEdit, lyEdDown, lyEdClose,
  * lyToggleSus, lyMaxToggle, lyInit
@@ -5707,7 +5815,8 @@
   /* FPS controls and optional independent 3D redraw loop (ported from TriThucCamLite). */
 
 /* ============================================================
- * MODULE: FPS
+ * @MODULE[alt+u:fps]  MỞ KHOÁ FPS VẼ 3D
+ * Phím: alt+u (keyFps)
  * fpsTick, fpsInstall, hookFpsRenderers,
  * fpsReplay, fps3dRun, applyFps,
  * install2dDragBoost, toggleFps
@@ -5856,7 +5965,7 @@
   window.__snapFps = { apply: applyFps, state: FPSM, replay: fpsReplay };
 
 /* ============================================================
- * MODULE: BOOTSTRAP (khởi động)
+ * @MODULE[init]  KHỞI ĐỘNG (bảng ACTIONS: phím → hàm, key dispatch)
  * cfgInit, applyFps, install2dDragBoost,
  * ACTIONS, key dispatch, event listeners, lyInit
  * ============================================================ */
