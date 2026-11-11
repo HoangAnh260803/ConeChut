@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         ConeChut_v2.8.4
+// @name         ConeChut_v2.8.6
 // @namespace    local
-// @version      2.8.4
+// @version      2.8.6
 // @description  no
 // @match        *://global-autolabeling-service.evad.xiaomi.srv/appen/mashup/ssr/tools/lidar.html*
 // @run-at       document-idle
@@ -12,7 +12,9 @@
 /* ============================================================
  * MỤC LỤC MODULE — tìm bằng Ctrl+F: @MODULE[tên-phím]   (vd: @MODULE[alt+q])
  * Mỗi tag là phím mặc định của chức năng (đổi phím được trong menu alt+s).
- * Bản chia module: tag trùng tên file trong src/ (vd @MODULE[alt+q] = src/alt+q.js).
+ * Bản chia module: tag trùng tên file trong src/ (vd @MODULE[alt+q] = src/alt+q.js);
+ * ký tự không hợp lệ trong tên file: '/' -> '_' , ':' -> '-' (vd core:ctx = src/core-ctx.js, left/right = src/left_right.js, ,/. = src/comma_period.js).
+ * Ghép lại thành 1 file userscript: node build.js  (thứ tự ghép trong src/_order.txt).
  * Muốn sửa/thêm một chức năng: chỉ cần mở đúng module của phím đó.
  *
  *  @MODULE[cfg]            Cấu hình mặc định (CFG, CFG_DEF) – sửa mặc định/phím gán nhanh ở đây
@@ -33,8 +35,9 @@
  *  @MODULE[left/right]     Chuyển ID kế/trước
  *  @MODULE[v]              Sát rìa xe (v hoặc ';' theo CFG, shift+v)
  *  @MODULE[,/.]            Khít đầu / khít đuôi (, . shift+, shift+.)
- *  @MODULE[alt+a]          Tự động hoá + đồng nhất kích thước (alt+a, shift+alt+a, alt+u)
+ *  @MODULE[alt+a]          Đồng nhất kích thước + khít đầu/đuôi (alt+u) – đã bỏ tự động hoá alt+a
  *  @MODULE[delete/i/alt+f] Xoá id, chiều rộng cố định, đồng bộ chiều đầu/đuôi
+ *  @MODULE[core:recolor]   Lõi: điểm mây trong box đổi màu ngay sau khi tool đổi box (gọi updateHighlightPoints)
  *  @MODULE[alt+z]          Hoàn tác (alt+z, z)
  *  @MODULE[shift+wasdqe]   Di chuyển mịn  ┐ chung một khối
  *  @MODULE[wasdqe]         Khoá trục xoay ┘
@@ -57,6 +60,8 @@
     minGroundPts: 8,
     percentile: 0.5,
     markHuman: true,
+    recolorBox: true,
+    quietEdit: true,
     envMargin: 1.0,
     tilt: true,
     maxTiltDeg: 15,
@@ -147,13 +152,6 @@
     sideOutMax: 0.04,
     sideMargin: 0.01,
     sideMinCover: 0.3,
-    keyAuto:     'alt+a',
-    keyAutoAll:  'shift+alt+a',
-    autoSize:    true,
-    autoYaw:     true,
-    autoSide:    false,
-    autoEnd:     false,
-    autoGround:  true,
     camArrange: 'auto',
     camZ: 900,
     camShowMax:  2,
@@ -610,9 +608,13 @@
  * toast, esc, kdisp, synthKey, ensureNavGuard,
  * bindKeyCapture, mouseSpec, runMacro
  * ============================================================ */
-  function toast(msg, ms) { console.log('[snap]', msg); var d = document.createElement('div');
-    d.textContent = msg; d.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);background:#fff3f8;color:#5a2a40;padding:8px 16px;border-radius:10px;border:1px solid #f1bdd2;box-shadow:0 6px 20px rgba(120,60,90,.2);z-index:99999;font:13px/1.45 Segoe UI,Arial,sans-serif;max-width:80vw';
-    document.body.appendChild(d); setTimeout(function () { d.remove(); }, ms || 1800); }
+  var _lastToast = 0;
+  function info(msg, ms) { if (CFG.quietEdit) console.log('[snap]', msg); else toast(msg, ms); }   // thông báo THÀNH CÔNG của chức năng đổi box (lỗi vẫn dùng toast)
+  function toast(msg, ms) { console.log('[snap]', msg); _lastToast = Date.now(); var d = document.createElement('div');
+    d.textContent = msg; d.className = '__snapToast';
+    d.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);background:#fff3f8;color:#5a2a40;padding:8px 16px;border-radius:10px;border:1px solid #f1bdd2;box-shadow:0 6px 20px rgba(120,60,90,.2);z-index:2147483647;font:13px/1.45 Segoe UI,Arial,sans-serif;max-width:80vw;pointer-events:none';
+    var host = document.fullscreenElement || document.documentElement || document.body;
+    host.appendChild(d); setTimeout(function () { d.remove(); }, ms || 1800); }
   function curFrame(C) {
     var f = C.S.currentFrame; return typeof f==='number'?f:C.V.currentFrame;
   }
@@ -652,7 +654,7 @@
     if (!all) {
       var f0 = curFrame(C), res = snapOne(C, id, f0);
       console.log('[snap] sat dat id', id, res);
-      toast('Dán sát đất frame ' + (f0 + 1) + ': ' + snapMsg(res) + (lastRedInfo ? ' | ' + lastRedInfo : ''), 3000);
+      info('Dán sát đất frame ' + (f0 + 1) + ': ' + snapMsg(res) + (lastRedInfo ? ' | ' + lastRedInfo : ''), 3000);
       if (res !== 'ok' && res !== 'tilt') window.__snapDebug();
       return;
     }
@@ -661,7 +663,7 @@
     if (!frames.length) return toast('Không có keyframe nào', 2500);
     var rr = recBegin('dán sát đất mọi keyframe'), ended = false;
     var end = function () { if (!ended) { ended = true; recEnd(rr); rr = null; } };
-    toast('Dán sát đất ' + frames.length + ' keyframe của id ' + id + '…', 1500);
+    info('Dán sát đất ' + frames.length + ' keyframe của id ' + id + '…', 1500);
     try {
       runOnFrames(id, frames, function (C1, f) { return snapOne(C1, id, f); }, function (list) {
         try { var Cx = ctx(); Cx && Cx.V.gridView && Cx.V.gridView.current && Cx.V.gridView.current.updateAllFramesCube(); } catch (e) {}
@@ -672,8 +674,8 @@
           if (k !== 'ok' && k !== 'tilt' && !why) why = (o.f + 1) + ': ' + (k === 'err' ? (o.r && o.r.why) : snapMsg(k));
         });
         console.log('[snap] sat dat moi keyframe id', id, r);
-        toast('Dán sát đất ' + frames.length + ' keyframe: ' + (r.ok + r.tilt) + ' OK (' + r.tilt + ' xoay theo đường)' + (why ? ' | bỏ qua ' + (frames.length - r.ok - r.tilt) + ' – ' + why : '') + ' | Alt+Z hoàn tác', 5000);
-      }, function (k, n, f) { if (n > 1 && (k === 1 || k % 5 === 0)) toast('Dán sát đất: frame ' + (f + 1) + ' (' + k + '/' + n + ')…', 1200); });
+        info('Dán sát đất ' + frames.length + ' keyframe: ' + (r.ok + r.tilt) + ' OK (' + r.tilt + ' xoay theo đường)' + (why ? ' | bỏ qua ' + (frames.length - r.ok - r.tilt) + ' – ' + why : '') + ' | Alt+Z hoàn tác', 5000);
+      }, function (k, n, f) { if (n > 1 && (k === 1 || k % 5 === 0)) info('Dán sát đất: frame ' + (f + 1) + ' (' + k + '/' + n + ')…', 1200); });
     } catch (e) { end(); console.error('[snap] sat dat moi keyframe', e); toast('LỖI dán sát đất: ' + (e && e.message || e), 5000); }
   }
   window.__doSnap = doSnap;
@@ -835,6 +837,8 @@
       ['keepAnchor', 'Đổi kích thước: giữ mặt nhiều điểm lidar – chỉ phần kéo ra/thu vào thay đổi'],
       ['widthValue', 'Chiều rộng cố định (m) – dùng cho phím đặt chiều rộng'],
       ['ctrlDragSnap', 'Bật Ctrl+kéo khít'],
+      ['recolorBox', 'Điểm mây trong box đổi màu ngay sau khi dùng chức năng của tool (giống khi kéo tay)'],
+      ['quietEdit', 'Tắt thông báo khi chức năng đổi box chạy xong (B, V, khít đầu/đuôi, chiều rộng…) – lỗi và cảnh báo vẫn hiện'],
       ['ctrlLockHeight', 'Ctrl+kéo chỉ di chuyển ngang – giữ nguyên độ cao'],
       ['#', 'Dán sát đất'],
       ['redOnly', 'Chỉ dùng điểm đất màu ĐỎ'],
@@ -861,16 +865,6 @@
       ['fpsShow', 'Hiện đồng hồ FPS ở góc dưới trái'],
       ['#', 'Hệ thống'],
       ['histKey', 'Phím của tool dùng để ghi lịch sử Z – a / w / s / d / q / e']
-    ] },
-    { t: 'Tự động hóa', d: 'Chạy liên tục các bước cho box đang chọn, theo thứ tự 1 → 5 (xoay khớp góc cạnh → khớp đường → đồng nhất kích thước lớn nhất). Hoàn tác bằng Alt+Z.', items: [
-      ['#', 'Phím chạy'],
-      ['keyAuto', 'Tự động hóa – frame hiện tại (kích thước áp cho cả track)'], ['keyAutoAll', 'Tự động hóa – mọi keyframe'],
-      ['#', 'Các bước'],
-      ['autoYaw', '1. Tự xoay khớp góc cạnh'],
-      ['autoGround', '2. Tự khớp với đường (dán sát đất)'],
-      ['autoSize', '3. Tự lấy kích thước dài / cao / rộng lớn nhất của id rồi đồng nhất mọi keyframe'],
-      ['autoSide', '4. (Tùy chọn) Tự sát cạnh bên – trái / phải bên nào nhiều điểm hơn – chạy sau bước 3'],
-      ['autoEnd', '5. (Tùy chọn) Tự sát đầu/đuôi – bên nào nhiều điểm hơn – chạy sau bước 3']
     ] },
     { t: 'Giao diện canvas', d: 'Bấm nút xanh rồi kéo thả trực tiếp các ô trên màn hình – không cần nhập số.',
       btn: ['Chỉnh bố cục bằng kéo thả', function () { lyEdit(true); }, '#ff4fa3'],
@@ -1686,7 +1680,7 @@
     });
     _emit(S);
     _grid(C.V);
-    toast('Kéo đầu xe: ' + r.ok + ' frame' + (r.created ? ' (tạo mới ' + r.created + ' keyframe)' : '')
+    info('Kéo đầu xe: ' + r.ok + ' frame' + (r.created ? ' (tạo mới ' + r.created + ' keyframe)' : '')
       + (r.rel ? ', thêm liên kết ' + r.rel + ' frame' : '') + (r.miss ? ', ' + r.miss + ' frame bỏ qua' : '')
       + (info.length ? ' | ' + info.join('; ') : '')
       + (CFG.headCopyAttrs ? ' | thuộc tính: ' + (Object.keys(used.copy).length ? 'chép ' + Object.keys(used.copy).join(', ') : 'không thấy CIPO/hợp lệ/che phủ/động tĩnh')
@@ -1754,7 +1748,7 @@
     });
     _emit(S);
     _grid(C.V);
-    toast('Xe sau theo xe trước: ' + r.ok + ' frame' + (r.created ? ' (tạo mới ' + r.created + ' keyframe)' : '')
+    info('Xe sau theo xe trước: ' + r.ok + ' frame' + (r.created ? ' (tạo mới ' + r.created + ' keyframe)' : '')
       + (r.rel ? ', thêm liên kết ' + r.rel + ' frame' : '') + (r.miss ? ', ' + r.miss + ' bỏ qua' : '')
       + (info.length ? ' | ' + info.join('; ') : '')
       + (CFG.chainCopyAttrs ? ' | thuộc tính: ' + (Object.keys(used.copy).length ? 'chép ' + Object.keys(used.copy).join(', ') : 'không thấy CIPO/hợp lệ/che phủ/động tĩnh')
@@ -1837,7 +1831,7 @@
       + (r.same ? ', ' + r.same + ' box đã thẳng' : '') + (r.fail ? ', ' + r.fail + ' lỗi ghi' : '')
       + ' | class có ' + total + ' id' + (total <= 1 ? ' → không có xe nào khác cùng class!' : '');
     console.log('[snap] thang huong', { cat: cat, ref: ref, res: r, total: total });
-    toast(msg, 5000);
+    info(msg, 5000);
   }
   window.__doAlignClass = doAlignClass;
   var _cam = null, _bmCache = {};
@@ -2070,12 +2064,12 @@
     var root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
     root.innerHTML = '<style>'
       + ':host{all:initial}*{box-sizing:border-box}'
-      + '.wrap{position:absolute;inset:0;display:flex;flex-direction:column;background:#1b1b1d;border:1px solid #4a4a50;border-radius:8px;overflow:hidden;font:12px Segoe UI,Arial,sans-serif;color:#e6e6e8;box-shadow:0 8px 30px rgba(0,0,0,.6)}'
+      + '.wrap{position:absolute;inset:0;display:flex;flex-direction:column;background:#1b1b1d;border:0;border-radius:0;overflow:hidden;font:12px Segoe UI,Arial,sans-serif;color:#e6e6e8;box-shadow:none}'
       + '.bar{display:flex;align-items:center;gap:8px;padding:4px 10px;background:#2a2a2e;border-bottom:1px solid #3d3d43;flex:0 0 auto}'
       + '.bar b{flex:1 1 auto;color:#fff;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bar .hint{color:#b8b8bd;flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.msg{color:#d0d0d4;white-space:nowrap}.bar button{flex:0 0 auto}'
       + 'button{background:#34343a;color:#e6e6e8;border:1px solid #4a4a50;border-radius:6px;padding:2px 9px;cursor:pointer;font:12px Segoe UI,Arial,sans-serif}button:hover{background:#45454c;color:#fff;border-color:#5a5a62}'
       + '.grid{flex:1 1 auto;min-height:0;min-width:0;display:grid;gap:5px;padding:5px;overflow:hidden}'
-      + '.cell{position:relative;background:#000;border:2px solid #33333a;border-radius:6px;cursor:pointer;overflow:hidden;min-width:0;min-height:0}.cell:hover{border-color:#6a6a72}'
+      + '.cell{position:relative;background:#000;border:0;border-radius:0;cursor:pointer;overflow:hidden;min-width:0;min-height:0}'
       + '.cell canvas{position:absolute;left:0;top:0;width:100%;height:100%}'
       + '.lab{position:absolute;left:6px;top:4px;color:#fff;font-weight:bold;background:rgba(0,0,0,.6);padding:1px 7px;border-radius:5px;pointer-events:none}'
       + '.st{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;color:#fff;pointer-events:none}'
@@ -2108,7 +2102,7 @@
     if (window.ResizeObserver) { _cam.ro = new ResizeObserver(camFitSoon); _cam.ro.observe(_cam.grid); }
     camLayout(); setTimeout(camRender, 30);
     _cam.timer = setInterval(function () {
-      var C2 = ctx(); if (!_cam || !C2 || document.hidden || camHidden()) return;
+      var C2 = ctx(); if (!_cam || !C2 || document.hidden || uiBusy() || camHidden()) return;
       var id = selectedId(C2), f = curFrame(C2), t = id != null && C2.S.instancesTree[id], c = t && t.cubes && t.cubes[f];
       var sig = null;
       if (c) { var p0 = c.position || {}, r0 = c.rotation || {}, d0 = c.dimension || {}; sig = [p0.x, p0.y, p0.z, r0.x, r0.y, r0.z, d0.x, d0.y, d0.z]; }
@@ -2748,7 +2742,7 @@
       if (lyOff(R1.attr)) { var sh = R1.attr && R1.attr.w >= LY_MIN && R1.attr.h >= LY_MIN ? R1.attr : LY_SHOW.attr; R1.attr = { x: sh.x, y: sh.y, w: sh.w, h: sh.h, off: false }; CFG.layoutRects = R1; cfgSave(); lyApply(); }
     }
     apLayout(); try { apTrack(); } catch (e) {} apRender(true);
-    _ap.timer = setInterval(function () { if (!_ap || document.hidden) return; try { apRender(false); } catch (e) { console.warn('[snap] attr panel', e); } }, 200);
+    _ap.timer = setInterval(function () { if (!_ap || document.hidden || uiBusy()) return; try { apRender(false); } catch (e) { console.warn('[snap] attr panel', e); } }, 200);
   }
   window.__toggleAttrPanel = toggleAttrPanel;
   var _convertArm = { t: 0, key: '' }, _seenCats = {}, _ontoSet = {};
@@ -4487,9 +4481,9 @@
       list.forEach(function (o) { if (o.r.info) { ok++; last = o.r; if (o.r.end === 'đầu') nf++; else nr++; } else skip.push((o.f + 1) + ': ' + o.r.why); });
       var _c=ctx();if(_c)_emit(_c.S);
       if (skip.length) console.log('[snap] keo duoi bo qua', skip);
-      toast(title + ': khít ' + ok + '/' + frames.length + ' frame (' + nr + ' theo đuôi, ' + nf + ' theo đầu)' + (skip.length ? ' (' + skip.length + ' bỏ qua: ' + skip[0] + (skip.length > 1 ? '…' : '') + ')' : '')
+      info(title + ': khít ' + ok + '/' + frames.length + ' frame (' + nr + ' theo đuôi, ' + nf + ' theo đầu)' + (skip.length ? ' (' + skip.length + ' bỏ qua: ' + skip[0] + (skip.length > 1 ? '…' : '') + ')' : '')
         + (frames.length === 1 && last ? ' – ' + last.info : ''), 4000);
-    }, function (k, n, f) { if (n > 1 && (k === 1 || k % 5 === 0)) toast(title + ': đang khít đầu/đuôi frame ' + (f + 1) + ' (' + k + '/' + n + ')…', 1200); });
+    }, function (k, n, f) { if (n > 1 && (k === 1 || k % 5 === 0)) info(title + ': đang khít đầu/đuôi frame ' + (f + 1) + ' (' + k + '/' + n + ')…', 1200); });
   }
   function doTail(all, mode) {
     try {
@@ -4507,11 +4501,10 @@
   window.__doTail = doTail;
 
 /* ============================================================
- * @MODULE[alt+a]  TỰ ĐỘNG HOÁ + ĐỒNG NHẤT KÍCH THƯỚC
- * Phím: alt+a (keyAuto) · shift+alt+a (keyAutoAll) · alt+u (keyUnifyTail, đồng nhất kích thước + khít đầu/đuôi)
+ * @MODULE[alt+a]  ĐỒNG NHẤT KÍCH THƯỚC (alt+u)
+ * Phím: alt+u (keyUnifyTail, đồng nhất kích thước + khít đầu/đuôi)
  * anchorSigns, anchorPos, sizeFix, hookUnify,
- * doUnifyTail, ptCloudBBox, autoSizeTrack,
- * autoFrameA/B, doAuto
+ * doUnifyTail,
  * ============================================================ */
   function anchorSigns(C, id, f, p) {
     var sg = [0, -1, 0], fp = framePoints(C, f); if (!fp || !p) return sg;
@@ -4552,7 +4545,7 @@
     _emit(S);
     try { C2.V.gridView && C2.V.gridView.current && C2.V.gridView.current.updateAllFramesCube(); } catch (e) {}
     if (opts.after) opts.after(ch.length, Object.keys(before).length, sg);
-    else if (CFG.keepAnchor && ch.length) toast('Đồng nhất kích thước: ' + ch.length + ' keyframe, giữ nguyên mặt ' + anchorText(sg) + '.', 3000);
+    else if (CFG.keepAnchor && ch.length) info('Đồng nhất kích thước: ' + ch.length + ' keyframe, giữ nguyên mặt ' + anchorText(sg) + '.', 3000);
     if (!opts.noTail && ch.length && (force || CFG.tailAfterUnify)) tailFitFrames(C2, id, ch, 'Đồng nhất kích thước');
     else if (!opts.noTail && force && !ch.length) toast('Đồng nhất kích thước: không có frame nào đổi kích thước → không cần khít đầu/đuôi', 3000);
   }
@@ -4600,131 +4593,6 @@
   }
   window.__doUnifyTail = doUnifyTail;
   // Tính bounding box điểm mây của box ở frame f, trong hệ tọa độ local của box.
-  // Không lọc theo dimension hiện tại — lấy tất cả điểm trong vùng rộng (max_dim * 3)
-  // quanh tâm box rồi tính span thực tế.
-  function ptCloudBBox(C, id, f) {
-    var S = C.S, cube = S.instancesTree[id] && S.instancesTree[id].cubes[f];
-    if (!cube) return null;
-    var fp = framePoints(C, f);
-    if (!fp || !fp.pts || fp.pts.length < 9) return null;
-    var R = eulerMat(cube.rotation), c = cube.position;
-    var d = cube.dimension;
-    // Vùng lọc rộng gấp 2 lần dimension hiện tại (hoặc tối thiểu 5m) để không bỏ sót điểm
-    var wx = Math.max(d.x * 2, 5), wy = Math.max(d.y * 2, 5), wz = Math.max(d.z * 2, 5);
-    var P = fp.pts, F = fp.flags;
-    var lxMin = Infinity, lxMax = -Infinity, lyMin = Infinity, lyMax = -Infinity, lzMin = Infinity, lzMax = -Infinity;
-    var found = false;
-    for (var i = 0, n = P.length / 3; i < n; i++) {
-      if (F && F[i]) continue;
-      var l = mulTV(R, [P[3*i] - c.x, P[3*i+1] - c.y, P[3*i+2] - c.z]);
-      // Lọc theo vùng rộng trước
-      if (Math.abs(l[0]) > wx || Math.abs(l[1]) > wy || Math.abs(l[2]) > wz) continue;
-      if (l[0] < lxMin) lxMin = l[0]; if (l[0] > lxMax) lxMax = l[0];
-      if (l[1] < lyMin) lyMin = l[1]; if (l[1] > lyMax) lyMax = l[1];
-      if (l[2] < lzMin) lzMin = l[2]; if (l[2] > lzMax) lzMax = l[2];
-      found = true;
-    }
-    if (!found || lxMax <= lxMin || lzMax <= lzMin) return null;
-    return { x: lxMax - lxMin, y: lyMax - lyMin, z: lzMax - lzMin };
-  }
-  function autoSizeTrack(C, id, cur) {
-    var S = C.S, t = S.instancesTree[id], fr = trackFrames(S, id);
-    if (!fr.length) return { why: 'không có keyframe' };
-    // Lấy kích thước lớn nhất theo từng chiều từ điểm mây thực tế của mọi keyframe
-    var mx = { x: 0, y: 0, z: 0 }, usedPts = false;
-    fr.forEach(function (f) {
-      var bb = ptCloudBBox(C, id, f);
-      if (bb) {
-        if (bb.x > mx.x) mx.x = bb.x;
-        if (bb.y > mx.y) mx.y = bb.y;
-        if (bb.z > mx.z) mx.z = bb.z;
-        usedPts = true;
-      }
-    });
-    // Fallback: nếu không có frame nào load được điểm mây thì dùng cube.dimension max
-    if (!usedPts || mx.x < 0.1 || mx.z < 0.1) {
-      usedPts = false;
-      mx = { x: 0, y: 0, z: 0 };
-      fr.forEach(function (f) {
-        var d = t.cubes[f].dimension;
-        if (d.x > mx.x) mx.x = d.x;
-        if (d.y > mx.y) mx.y = d.y;
-        if (d.z > mx.z) mx.z = d.z;
-      });
-    }
-    if (!mx.x || !mx.y || !mx.z) return { why: 'không đo được kích thước' };
-    var ref = t.cubes[cur] ? cur : fr.reduce(function (a, b) { return Math.abs(b - cur) < Math.abs(a - cur) ? b : a; });
-    var rc = t.cubes[ref], rb = { pos: vec3(rc.position), rot: vec3(rc.rotation), dim: vec3(rc.dimension) };
-    var sg = CFG.keepAnchor ? anchorSigns(C, id, ref, rb) : [0, 0, 0], n = 0;
-    fr.forEach(function (f) {
-      var c = t.cubes[f]; if (!c || sameDim(c.dimension, mx)) return;
-      var b = { pos: vec3(c.position), rot: vec3(c.rotation), dim: vec3(c.dimension) };
-      S.updateCubeMatrix(id, f, { position: anchorPos(b, mx, sg), rotation: b.rot, dimension: vec3(mx) });
-      if(CFG.markHuman&&S.changeCubeInterpolation)S.changeCubeInterpolation(id,f,false,'human');
-      _calc(S,id,f);
-      n++;
-    });
-    return { n: n, total: fr.length, dim: mx, fromPts: usedPts };
-  }
-  // Thứ tự: (A) xoay khớp góc cạnh -> khớp đường  |  (kích thước lớn nhất của id)  |  (B, tùy chọn) sát cạnh bên -> sát đầu/đuôi
-  function autoFrameA(C, id, f, cnt) {
-    var note = function (s) { if (!cnt.note) cnt.note = s; }, r;
-    if (CFG.autoYaw) { r = edgeFit(C, id, f, { yaw: true, force: true }); if (r.info) cnt.yaw++; else note('xoay ' + (f + 1) + ': ' + r.why); }
-    if (CFG.autoGround) { var g = snapOne(C, id, f); if (g === 'ok' || g === 'tilt') cnt.ground++; else note('đường ' + (f + 1) + ': ' + g); }
-  }
-  function autoFrameB(C, id, f, cnt) {
-    var note = function (s) { if (!cnt.note) cnt.note = s; }, r;
-    if (CFG.autoSide) { r = edgeFit(C, id, f, { lat: true }); if (r.info) cnt.side++; else note('cạnh bên ' + (f + 1) + ': ' + r.why); }
-    if (CFG.autoEnd) { r = tailFit(C, id, f); if (r.info) cnt.end++; else note('đầu/đuôi ' + (f + 1) + ': ' + r.why); }
-  }
-  function doAuto(all) {
-    var rr = null;
-    try {
-      var C = ctx(); if (!C) return toast('Tool chưa sẵn sàng');
-      var id = selectedId(C); if (id == null) return toast('Chưa chọn box', 2500);
-      if (_frameRun) return toast('Đang chạy, đợi xong đã…', 2000);
-      if (!(CFG.autoSize || CFG.autoYaw || CFG.autoSide || CFG.autoEnd || CFG.autoGround)) return toast('Chưa bật bước nào (Alt+S → Tự động hóa)', 3500);
-      var S = C.S, cur = curFrame(C), fr;
-      rr = recBegin(all ? 'tự động hóa mọi keyframe' : 'tự động hóa frame ' + (cur + 1));
-      if (all) { fr = trackFrames(S, id); if (!fr.length) { recEnd(rr); return toast('Không có keyframe nào', 2500); } }
-      else { ensureBoxAt(C, id, cur); fr = [cur]; }
-      var cnt = { yaw: 0, side: 0, end: 0, ground: 0, note: '' }, sz = null;
-      var needA = !!(CFG.autoYaw || CFG.autoGround), needB = !!(CFG.autoSide || CFG.autoEnd);
-      var fail = function (e) { recEnd(rr); rr = null; console.error('[snap] tu dong hoa', e); toast('LỖI tự động hóa: ' + (e && e.message || e), 5000); };
-      var finish = function () {
-        _emit(S);
-        _grid(C.V);
-        recEnd(rr); rr = null;
-        var p = [];
-        if (CFG.autoYaw) p.push('xoay ' + cnt.yaw); if (CFG.autoGround) p.push('đường ' + cnt.ground);
-        if (CFG.autoSize) p.push(sz && sz.dim ? 'kích thước ' + sz.dim.x.toFixed(2) + '×' + sz.dim.y.toFixed(2) + '×' + sz.dim.z.toFixed(2) + ' (đổi ' + sz.n + '/' + sz.total + ' keyframe' + (sz.fromPts ? ', từ điểm mây' : ', từ dimension') + ')' : 'kích thước: ' + (sz && sz.why));
-        if (CFG.autoSide) p.push('cạnh bên ' + cnt.side); if (CFG.autoEnd) p.push('đầu/đuôi ' + cnt.end);
-        toast('Tự động hóa (' + (all ? fr.length + ' keyframe' : 'frame ' + (cur + 1)) + '): ' + p.join(', ') + (cnt.note ? ' | bỏ qua: ' + cnt.note : '') + ' | Alt+Z hoàn tác', 6000);
-      };
-      var progress = function (tag) { return function (k, n, f) { if (n > 1 && (k === 1 || k % 5 === 0)) toast('Tự động hóa ' + tag + ': frame ' + (f + 1) + ' (' + k + '/' + n + ')…', 1200); }; };
-      var workA = function (C1, f) { autoFrameA(C1, id, f, cnt); return {}; };
-      var workB = function (C1, f) { autoFrameB(C1, id, f, cnt); return {}; };
-      // Bước B (sát cạnh bên / đầu-đuôi) chạy sau khi đã đồng nhất kích thước
-      var stepB = function () {
-        try {
-          if (!needB) return finish();
-          if (!all) { workB(ctx() || C, cur); return finish(); }
-          runOnFrames(id, fr, workB, function () { try { finish(); } catch (e) { fail(e); } }, progress('(sát cạnh)'));
-        } catch (e) { fail(e); }
-      };
-      // Bước size: lấy dài/cao/rộng lớn nhất của id rồi đồng nhất cho mọi keyframe
-      var stepSize = function () {
-        try {
-          if (CFG.autoSize) sz = autoSizeTrack(ctx() || C, id, cur);
-          stepB();
-        } catch (e) { fail(e); }
-      };
-      if (!needA) return stepSize();
-      if (!all) { workA(C, cur); return stepSize(); }
-      runOnFrames(id, fr, workA, stepSize, progress('(xoay + đường)'));
-    } catch (e) { recEnd(rr); console.error('[snap] tu dong hoa', e); toast('LỖI tự động hóa: ' + (e && e.message || e), 5000); }
-  }
-  window.__doAuto = doAuto;
 
 /* ============================================================
  * @MODULE[delete/i/alt+f]  XOÁ ID / CHIỀU RỘNG / ĐỒNG BỘ CHIỀU
@@ -4784,7 +4652,7 @@
       _emit(S);
       reselectBox(C, id);
       var opts = { before: before, rec: r, signs: sg, lockW: w, noTail: true, after: function (n, total) {
-        toast('Chiều rộng = ' + w + 'm: đổi ' + n + '/' + total + ' keyframe' + (CFG.keepAnchor ? ', giữ nguyên mặt ' + anchorText(sg) : '') + '. Z hoặc Alt+Z để hoàn tác.', 4000);
+        info('Chiều rộng = ' + w + 'm: đổi ' + n + '/' + total + ' keyframe' + (CFG.keepAnchor ? ', giữ nguyên mặt ' + anchorText(sg) : '') + '. Z hoặc Alt+Z để hoàn tác.', 4000);
       } };
       var rr = r; r = null;
       hookUnify();
@@ -4846,13 +4714,104 @@
       });
       try { console.table ? console.table(rows) : console.log(rows); } catch (e2) {}
       _emit(S);
-      toast('Đồng bộ chiều id ' + id + ' theo frame ' + (cur + 1) + ' (hướng ' + (hRef * DEG).toFixed(1) + '°): ' + (CFG.dirCopyYaw ? 'chép hướng ' : 'chỉnh ') + n + '/' + frames.length + ' keyframe' + (CFG.dirCopyYaw ? '' : ' (' + n180 + ' lật 180°, ' + n90 + ' xoay 90°)')
+      info('Đồng bộ chiều id ' + id + ' theo frame ' + (cur + 1) + ' (hướng ' + (hRef * DEG).toFixed(1) + '°): ' + (CFG.dirCopyYaw ? 'chép hướng ' : 'chỉnh ') + n + '/' + frames.length + ' keyframe' + (CFG.dirCopyYaw ? '' : ' (' + n180 + ' lật 180°, ' + n90 + ' xoay 90°)')
         + (keep ? ', ' + keep + ' đã cùng chiều (giữ nguyên)' : '') + (fail ? ' | ⚠ ' + fail + ' keyframe tool KHÔNG nhận' : '') + (dimFix ? ' | đã trả lại kích thước cho ' + dimFix + ' keyframe' : '')
         + '. Chỉ đổi hướng; kích thước, vị trí, độ nghiêng giữ nguyên.', fail ? 9000 : 5500);
     } catch (e) { console.error('[snap] loi doi huong', e); toast('LỖI đồng bộ chiều: ' + (e && e.message || e), 5000); }
   }
   window.__doDirAll = doDirAll;
   var _undo = [], _rec = null, _restoring = false, UNDO_MAX = 60, _recOK = null, _seq = 0, _platSeq = 0;
+
+/* ============================================================
+ * @MODULE[core:recolor]  ĐỔI MÀU ĐIỂM MÂY TRONG BOX NGAY (lõi, không có phím)
+ * Khi kéo tay, TransformControls của nền tảng phát sự kiện nên điểm trong box đổi màu.
+ * Chức năng của tool chỉ ghi dữ liệu (updateCubeMatrix) nên màu đứng yên -> ở đây
+ * hook updateCubeMatrix, đợi mesh cập nhật rồi phát lại đúng sự kiện đó.
+ * Tắt/bật: CFG.recolorBox (menu alt+s). Gỡ lỗi: window.__snapRecolorProbe()
+ * ============================================================ */
+  var _ptrDownAt = 0, _wheelUntil = 0;
+  function uiBusy() { var n = Date.now(); return (_ptrDown && n - _ptrDownAt < 60000) || n < _wheelUntil; }   // đang kéo/zoom -> tool tạm dừng việc định kỳ để nhường CPU cho nền tảng
+  var _ptrDown = false, _recolorT = 0, _recolorBusy = false, _recolorQuiet = 0, _recolorTry = 0, _ctl = null, _recolorWarn = false;
+  ['pointerdown', 'mousedown'].forEach(function (n) { window.addEventListener(n, function () { _ptrDown = true; _ptrDownAt = Date.now(); }, true); });
+  window.addEventListener('wheel', function () { _wheelUntil = Date.now() + 250; }, { capture: true, passive: true });
+  ['pointerup', 'pointercancel', 'mouseup', 'blur', 'dragend'].forEach(function (n) { window.addEventListener(n, function () { _ptrDown = false; }, true); });
+  function findCubeCtl(V, sc) {
+    if (_ctl && _ctl.object === sc && typeof _ctl.dispatchEvent === 'function') return _ctl;
+    _ctl = null;
+    var hit = null;
+    try {
+      var root = sc; while (root.parent) root = root.parent;
+      root.traverse(function (o) { if (!hit && o !== sc && o.object === sc && typeof o.dispatchEvent === 'function') hit = o; });
+    } catch (e) {}
+    if (!hit) {
+      var seen = new Set(), q = [[V, 0]], n = 0, SK = /^(instancesTree|instanceAttributes|cubes|relations|calibs|images|pointsObjectMap|parent|children|_reactInternals|_reactInternalFiber|props|state)$/;
+      while (q.length && n++ < 3000 && !hit) {
+        var it = q.shift(), o = it[0];
+        if (!o || typeof o !== 'object' || seen.has(o)) continue; seen.add(o);
+        if (o.nodeType || ArrayBuffer.isView(o) || o.isBufferGeometry || o.isMaterial || o.isTexture) continue;
+        if (o !== V && o !== sc && o.object === sc && typeof o.dispatchEvent === 'function') { hit = o; break; }
+        if (it[1] >= 3) continue;
+        var ks; try { ks = Object.keys(o); } catch (e) { continue; }
+        for (var i = 0; i < ks.length && i < 150; i++) { if (SK.test(ks[i])) continue; var v; try { v = o[ks[i]]; } catch (e) { continue; } if (v && typeof v === 'object') q.push([v, it[1] + 1]); }
+      }
+    }
+    _ctl = hit; return hit;
+  }
+  function scheduleRecolor(id, f) {
+    if (!CFG.recolorBox || _recolorBusy || _restoring || _ptrDown || Date.now() < _recolorQuiet) return;
+    if (_recolorT) clearTimeout(_recolorT);
+    _recolorTry = 0; _recolorT = setTimeout(recolorNow, 40);
+  }
+  function recolorNow() {
+    _recolorT = 0;
+    try {
+      if (!CFG.recolorBox || _ptrDown || _recolorBusy) return;
+      var C = ctx(); if (!C) return;
+      var sc = C.V.selectedCube; if (!sc || !sc.userData || sc.userData.id == null) return;
+      var id = sc.userData.id, f = curFrame(C), tr = C.S.instancesTree[id], cube = tr && tr.cubes && tr.cubes[f];
+      if (!cube) return;
+      var p = sc.position, q = cube.position;
+      if ((Math.abs(p.x - q.x) > 1e-3 || Math.abs(p.y - q.y) > 1e-3 || Math.abs(p.z - q.z) > 1e-3) && _recolorTry++ < 4) { _recolorT = setTimeout(recolorNow, 40); return; }
+      var before = { position: vec3(cube.position), rotation: vec3(cube.rotation), dimension: vec3(cube.dimension) };
+      var ctl = findCubeCtl(C.V, sc), wasR = _restoring;
+      _recolorBusy = true; _restoring = true;
+      try {
+        var V = C.V, hl = typeof V.updateHighlightPoints === 'function' ? 'updateHighlightPoints' : (typeof V.updateHighlightPointsDebounce === 'function' ? 'updateHighlightPointsDebounce' : '');
+        if (hl) {
+          var tried = [[sc], [], [id, f]], okc = false;
+          for (var ti = 0; ti < tried.length && !okc; ti++) { try { V[hl].apply(V, tried[ti]); okc = true; } catch (e1) { if (ti === tried.length - 1) console.warn('[snap] recolor ' + hl, e1); } }
+        }
+        if (ctl) { ctl.dispatchEvent({ type: 'objectChange' }); ctl.dispatchEvent({ type: 'change' }); }
+        else if (hl) { /* da goi ham to mau cua nen tang */ }
+        else {
+          if (!_recolorWarn) { _recolorWarn = true; console.warn('[snap] recolor: khong tim thay TransformControls, dung chon lai box. Chay __snapRecolorProbe() de gui lai ket qua.'); }
+          reselectBox(C, id, true);
+        }
+        var c2 = C.S.instancesTree[id] && C.S.instancesTree[id].cubes[f];
+        if (c2 && (Math.abs(c2.position.x - before.position.x) > 1e-5 || Math.abs(c2.position.y - before.position.y) > 1e-5 || Math.abs(c2.position.z - before.position.z) > 1e-5
+          || Math.abs(c2.dimension.x - before.dimension.x) > 1e-5 || Math.abs(c2.dimension.y - before.dimension.y) > 1e-5 || Math.abs(c2.dimension.z - before.dimension.z) > 1e-5
+          || Math.abs(c2.rotation.x - before.rotation.x) > 1e-5 || Math.abs(c2.rotation.y - before.rotation.y) > 1e-5 || Math.abs(c2.rotation.z - before.rotation.z) > 1e-5)) {
+          C.S.updateCubeMatrix(id, f, before); _emit(C.S);
+          console.warn('[snap] recolor: su kien lam doi box, da khoi phuc lai');
+        }
+      } finally { _restoring = wasR; _recolorBusy = false; _recolorQuiet = Date.now() + 250; }
+    } catch (e) { _recolorBusy = false; console.warn('[snap] recolor', e); }
+  }
+  window.__snapRecolorNow = recolorNow;
+  window.__snapRecolorProbe = function () {
+    var C = ctx(); if (!C) return console.log('[snap] chua co ctx');
+    var sc = C.V.selectedCube, ctl = sc && findCubeCtl(C.V, sc), RX = /point|color|colour|highlight|inside|incube|paint|cubechange|objectchange|refresh/i, out = {};
+    out.selectedCube = !!sc; out.controls = ctl ? (ctl.constructor && ctl.constructor.name) : null;
+    function names(o) { var r = [], seen = {}; for (var x = o; x && x !== Object.prototype; x = Object.getPrototypeOf(x)) { Object.getOwnPropertyNames(x).forEach(function (k) { var v; try { v = o[k]; } catch (e) { return; } if (typeof v === 'function' && RX.test(k) && !seen[k]) { seen[k] = 1; r.push(k); } }); } return r; }
+    out.V = names(C.V); out.S = names(C.S); out.L = C.L ? names(C.L) : null;
+    var fp = C.L && C.L.pointsObjectMap && C.L.pointsObjectMap[curFrame(C)];
+    out.lidarAttrs = fp && fp.lidar ? Object.keys(fp.lidar.geometry.attributes) : null;
+    out.lidarUniforms = fp && fp.lidar && fp.lidar.material.uniforms ? Object.keys(fp.lidar.material.uniforms) : null;
+    out.src = {}; ['updateHighlightPoints', 'updateHighlightPointsDebounce', 'calcOneFrameCubesPointsCount'].forEach(function (k) { try { out.src[k] = String(C.V[k]).slice(0, 4000); } catch (e) {} });
+    if (ctl && ctl._listeners && ctl._listeners.change) out.src.changeHandlers = ctl._listeners.change.map(function (h) { return String(h).slice(0, 3000); });
+    out.ctlListeners = ctl && ctl._listeners ? Object.keys(ctl._listeners) : null;
+    console.log('[snap] recolor probe', out); return out;
+  };
 
 /* ============================================================
  * @MODULE[alt+z]  HOÀN TÁC
@@ -4898,6 +4857,7 @@
     }
     wrapFn('updateCubeMatrix', touch); wrapFn('updateCubeLabel', touch); wrapFn('changeCubeInterpolation', touch);
     wrapFn('putCube', created); wrapFn('addCube', created);
+    wrapFn('updateCubeMatrix', scheduleRecolor, true);
     ['updateCubeMatrix', 'updateCubeLabel', 'updateInstanceLabel', 'changeCubeInterpolation', 'putCube', 'addCube'].forEach(function (n) { wrapFn(n, function () { if (!_rec && !_restoring && !_fineBusy) _platSeq = ++_seq; }, true); });
     ['updateCubeLabel', 'updateInstanceLabel', 'updateCubeMatrix', 'putCube', 'addCube'].forEach(function (n) { wrapFn(n, chkNotify, true); });
   }
@@ -5028,16 +4988,38 @@
     } catch (x) {}
     return '';
   }
+  function deepElAt(x, y) {
+    var el = document.elementFromPoint(x, y);
+    for (var n = 0; el && el.shadowRoot && n < 6; n++) { var e2 = el.shadowRoot.elementFromPoint(x, y); if (!e2 || e2 === el) break; el = e2; }
+    return el;
+  }
+  /* Luôn tra phần tử dưới con trỏ NGAY LÚC BẤM PHÍM. Không tin _ly.mv (lưu từ mousemove cuối):
+     sau Tab phóng to/thu nhỏ, bố cục đổi dưới con trỏ đứng yên, không có mousemove mới -> _ly.mv cũ -> sai trục A/W/S/D. */
   function axisHoverView() {
     try {
       var o = (typeof _ly !== 'undefined') ? _ly : null;
       if (!o) return '';
-      if (o.mv) return o.mv;
-      if (o.mx == null) return '';
-      return axisViewOf(document.elementFromPoint(o.mx, o.my));
+      if (o.mx == null) return o.mv || '';
+      var v = axisViewOf(deepElAt(o.mx, o.my));
+      o.mv = v; return v;
     } catch (x) {}
     return '';
   }
+  /* Làm mới trạng thái hover của nền tảng sau khi bố cục đổi (Tab, phóng/thu ô): gửi 1 mousemove tại vị trí con trỏ. */
+  var _prT = 0;
+  function pointerRefresh() {
+    _prT = 0;
+    try {
+      var o = (typeof _ly !== 'undefined') ? _ly : null;
+      if (!o || o.mx == null || o.ed || _ptrDown) return;
+      var el = deepElAt(o.mx, o.my); if (!el) return;
+      o.mv = axisViewOf(el);
+      var d = { bubbles: true, cancelable: true, composed: true, clientX: o.mx, clientY: o.my, screenX: o.mx, screenY: o.my, view: window, buttons: 0 };
+      try { el.dispatchEvent(new PointerEvent('pointermove', Object.assign({ pointerId: 1, pointerType: 'mouse', isPrimary: true }, d))); } catch (e1) {}
+      el.dispatchEvent(new MouseEvent('mousemove', d));
+    } catch (e) {}
+  }
+  function pointerRefreshSoon(ms) { if (_prT) clearTimeout(_prT); _prT = setTimeout(pointerRefresh, ms == null ? 60 : ms); }
   var _axSign = (function () { try { return JSON.parse(localStorage.getItem('__snapAxisSign') || '{}') || {}; } catch (e) { return {}; } })();
   function axisLearn(k, sg) { if (_axSign[k] === sg) return; _axSign[k] = sg; try { localStorage.setItem('__snapAxisSign', JSON.stringify(_axSign)); } catch (e) {} }
   function axisLockStep(Rb, Ra, view, code) {
@@ -5486,7 +5468,7 @@
     _cam.pos = p; camLayout(); camFitSoon();
   }
   function lyTrack() {
-    if (!CFG.layoutOn || _ly.sus || document.hidden) return;
+    if (!CFG.layoutOn || _ly.sus || document.hidden || uiBusy()) return;
     lyMaxAttr();
     lyTag(true);
     if (_ly.max) lyPauseSync();
@@ -5506,7 +5488,7 @@
   }
   function lyNotify(quick) {
     clearTimeout(_ly.t);
-    var fire = function () { try { window.dispatchEvent(new Event('resize')); } catch (e) {} lyDock(!quick); try { apTrack(); } catch (e) {} };
+    var fire = function () { try { window.dispatchEvent(new Event('resize')); } catch (e) {} lyDock(!quick); try { apTrack(); } catch (e) {} pointerRefreshSoon(); };
     if (quick) { if (_ly.rzq) return; _ly.rzq = 1; try { fire(); } finally { requestAnimationFrame(function () { _ly.rzq = 0; }); } return; }
     requestAnimationFrame(fire); _ly.t = setTimeout(fire, 250);
   }
@@ -5768,6 +5750,7 @@
        active cell. Rebuild the image bounds after that geometry is current,
        so the image ends at the panel edge instead of rendering underneath it. */
     if (lyImgRole(_ly.max) && lyCssRefresh()) lyNotify(true);
+    pointerRefreshSoon(30); setTimeout(pointerRefresh, 320);
     return true;
   }
   function lyTabNative(role) {
@@ -5799,10 +5782,10 @@
   function lyInit() {
     window.__snapLayout = lyApply;
     setInterval(function () {
-      if (!CFG.layoutOn || _ly.sus || document.hidden || !lyGrid()) return;
+      if (!CFG.layoutOn || _ly.sus || document.hidden || uiBusy() || !lyGrid()) return;
       lyTag(true); if (!document.getElementById(LY_ID)) lyApply();
     }, 1000);
-    setInterval(function () { if (CFG.layoutOn && !_ly.sus && !document.hidden && lyGrid()) lyTag(); }, 5000);
+    setInterval(function () { if (CFG.layoutOn && !_ly.sus && !document.hidden && !uiBusy() && lyGrid()) lyTag(); }, 5000);
     setInterval(lyTrack, 200);
     var scrRaf = 0;
     window.addEventListener('scroll', function () { if (scrRaf) return; scrRaf = requestAnimationFrame(function () { scrRaf = 0; lyTrack(); }); }, true);
@@ -5823,8 +5806,7 @@
  * ============================================================ */
   var FPSM = { orig: null, origC: null, q: new Map(), seq: 0, timer: 0, last: 0, on: false, draws: 0, frames: 0, el: null, tu: null, rs: [], frameNo: 0, rec: { frame: -1, list: [] }, lastSeq: [], toolDrew: 0, replaying: false, loop3d: false, drag2d: false };
   var NAT_RAF = window.requestAnimationFrame.bind(window);
-  (function fpsFrameCount() { FPSM.frames++; NAT_RAF(fpsFrameCount); })();
-  (function fpsFrameNo() { FPSM.frameNo++; NAT_RAF(fpsFrameNo); })();
+  (function fpsFrame() { FPSM.frames++; FPSM.frameNo++; NAT_RAF(fpsFrame); })();
   function fpsTick() {
     FPSM.timer = 0;
     var now = performance.now(), iv = 1000 / Math.max(30, parseFloat(CFG.fpsTarget) || 144);
@@ -5856,7 +5838,10 @@
       if (FPSM.rs.indexOf(r) >= 0) return; FPSM.rs.push(r);
       var o = r.render;
       r.render = function (scene, camera) {
-        if (!FPSM.replaying) {
+        if (!FPSM.replaying && !CFG.fps3d) {   // đường nhẹ: chỉ đếm số lần vẽ cho đồng hồ FPS, không ghi lại tham số
+          FPSM.toolDrew++;
+          if (FPSM.rec.frame !== FPSM.frameNo) { FPSM.draws++; FPSM.rec.frame = FPSM.frameNo; FPSM.rec.list = []; }
+        } else if (!FPSM.replaying) {
           FPSM.toolDrew++;
           if (FPSM.rec.frame !== FPSM.frameNo) {
             FPSM.draws++; if (FPSM.rec.list.length) FPSM.lastSeq = FPSM.rec.list; FPSM.rec = { frame: FPSM.frameNo, list: [] };
@@ -5919,7 +5904,7 @@
       else if (FPSM.tu) { tu.fps = FPSM.tu.fps; tu.idleFps = FPSM.tu.idleFps; FPSM.tu = null; }
     }
     fpsInstall(effectiveMode === 'unlock');
-    try { hookFpsRenderers(); } catch (e) {}
+    try { if (CFG.fps3d || (CFG.fpsShow && mode !== 'off')) hookFpsRenderers(); } catch (e) {}
     fps3dRun(!!CFG.fps3d);
     var showOn = CFG.fpsShow && (CFG.fps3d || (mode && mode !== 'off'));
     if (showOn && !FPSM.el && document.body) {
@@ -5972,7 +5957,7 @@
   (function wait(t) {
     if (ctx()) {
       cfgInit();
-      try { applyFps(); install2dDragBoost(); setInterval(function () { if (CFG.fps3d || CFG.fpsMode !== 'off') hookFpsRenderers(); }, 2000); } catch (e) { console.warn('[snap] FPS', e); }
+      try { applyFps(); install2dDragBoost(); setInterval(function () { if (!uiBusy() && (CFG.fps3d || (CFG.fpsShow && CFG.fpsMode !== 'off'))) hookFpsRenderers(); }, 2000); } catch (e) { console.warn('[snap] FPS', e); }
       var busy = toolBusy;
       var ACTIONS = [
         ['keyMenu', toggleMenu, false, 'menu cài đặt'],
@@ -6003,12 +5988,10 @@
         ['keyFilterPanel', toggleFilterPanel, false, 'bộ lọc box (CIPO/che phủ/động tĩnh)'],
         ['keyNextId', function () { selectNeighbor(1); }, true, 'id kế tiếp'],
         ['keyPrevId', function () { selectNeighbor(-1); }, true, 'id trước đó'],
-        ['keyAutoAll', function () { doAuto(true); }, true, 'tự động hóa mọi keyframe'],
-        ['keyAuto', function () { doAuto(false); }, true, 'tự động hóa frame hiện tại'],
         ['keyEdgeAll', function () { doEdgeFit(true); }, true, 'sát rìa xe mọi keyframe'],
         ['keyEdge', function () { viaTool('sát rìa xe', function () { doEdgeFit(false); }); }, true, 'sát rìa xe (bỏ gương)']
       ];
-      var UNDOZ = ["keyFitHead", "keyFitTail", "keyFitHeadAll", "keyFitTailAll", "keyUnifyTail", "keyHeadAll", "keyHead", "keyChainAll", "keyChain", "keyDirAll", "keyWidth", "keyAutoAll", "keyAuto", "keyEdgeAll"];
+      var UNDOZ = ["keyFitHead", "keyFitTail", "keyFitHeadAll", "keyFitTailAll", "keyUnifyTail", "keyHeadAll", "keyHead", "keyChainAll", "keyChain", "keyDirAll", "keyWidth", "keyEdgeAll"];
       ACTIONS.forEach(function (a) {
         if (UNDOZ.indexOf(a[0]) < 0) return;
         var fn = a[1], lb = a[3]; a[1] = function () { viaTool(lb, fn); };
@@ -6032,7 +6015,7 @@
       try { installRecorder(ctx().S); } catch (e) { console.warn('[snap] installRecorder', e); }
       var parsed = [], remaps = [], attrKs = [];
       window.__snapRebuildKeys = function () {
-        parsed = ACTIONS.map(function (a) { return { k: parseKey(CFG[a[0]]), fn: a[1], idle: a[2], label: a[3], cond: a[4], rec: ['keyUndo', 'keyWidth', 'keyUnifyTail', 'keySnap', 'keySnapAll', 'keyEdge', 'keyAuto', 'keyAutoAll'].indexOf(a[0]) < 0 && UNDOZ.indexOf(a[0]) < 0 }; });
+        parsed = ACTIONS.map(function (a) { return { k: parseKey(CFG[a[0]]), fn: a[1], idle: a[2], label: a[3], cond: a[4], rec: ['keyUndo', 'keyWidth', 'keyUnifyTail', 'keySnap', 'keySnapAll', 'keyEdge'].indexOf(a[0]) < 0 && UNDOZ.indexOf(a[0]) < 0 }; });
         attrKs = (CFG.attrKeys || []).filter(Boolean).map(normAttr).filter(function (x) { return x.k && (x.sets.length || x.scope === 'copyall'); }).map(function (x) { return { k: parseKey(x.k), spec: x }; });
         remaps = (CFG.toolKeyMap || []).filter(function (x) { return x && x[0] && x[1] && x[1].length; }).map(function (x) { return { k: parseKey(x[0]), to: [].concat(x[1]) }; });
         var mb = { mouseback: false, mouseforward: false };
@@ -6100,8 +6083,8 @@
       window.addEventListener('keyup', onFineKey, true);
       window.addEventListener('keydown', onZKey, true);
       window.addEventListener('keydown', onAxisKey, true);
-      ['mousemove', 'pointermove', 'mousedown'].forEach(function (ev) {
-        window.addEventListener(ev, function (e) { _ly.mx = e.clientX; _ly.my = e.clientY; _ly.mv = axisViewOf(e.composedPath ? e.composedPath()[0] : e.target); }, { capture: true, passive: true });
+      ['pointermove', 'mousedown'].forEach(function (ev) {
+        window.addEventListener(ev, function (e) { _ly.mx = e.clientX; _ly.my = e.clientY; }, { capture: true, passive: true });
       });
       window.addEventListener('keydown', function (e) {
         if (e.key !== 'Tab' || e.ctrlKey || e.altKey || e.shiftKey || e.metaKey || e.__snapSynth) return;
