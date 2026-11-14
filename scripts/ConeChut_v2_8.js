@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         ConeChut_v2.8.6
+// @name         ConeChut_v2.8.22
 // @namespace    local
-// @version      2.8.6
+// @version      2.8.22
 // @description  no
 // @match        *://global-autolabeling-service.evad.xiaomi.srv/appen/mashup/ssr/tools/lidar.html*
 // @run-at       document-idle
@@ -37,7 +37,9 @@
  *  @MODULE[,/.]            Khít đầu / khít đuôi (, . shift+, shift+.)
  *  @MODULE[alt+a]          Đồng nhất kích thước + khít đầu/đuôi (alt+u) – đã bỏ tự động hoá alt+a
  *  @MODULE[delete/i/alt+f] Xoá id, chiều rộng cố định, đồng bộ chiều đầu/đuôi
+ *  @MODULE[shift+f]        Mũi tên hướng đỏ trên ảnh 2D 7 cam + 3D (shift+f bật/tắt)
  *  @MODULE[core:recolor]   Lõi: điểm mây trong box đổi màu ngay sau khi tool đổi box (gọi updateHighlightPoints)
+ *  @MODULE[core:profile]   Lõi: __snapProfile(giây) đo hàm nền tảng nào tốn thời gian
  *  @MODULE[alt+z]          Hoàn tác (alt+z, z)
  *  @MODULE[shift+wasdqe]   Di chuyển mịn  ┐ chung một khối
  *  @MODULE[wasdqe]         Khoá trục xoay ┘
@@ -61,7 +63,18 @@
     percentile: 0.5,
     markHuman: true,
     recolorBox: true,
+    pauseWhileDragging: true,
+    hoverSyncKeys: true,
+    fpsHoverBoost: true,
     quietEdit: true,
+    showArrows: true,
+    keyArrow: 'shift+f',
+    arrowExt: 1,
+    arrowFlip: false,
+    arrowOrtho: false,
+    arrowWidth: 1,
+    arrow3dSize: 2,
+    arrowHead: 1,
     envMargin: 1.0,
     tilt: true,
     maxTiltDeg: 15,
@@ -80,7 +93,6 @@
     keyChainAll: 'ctrl+shift+g',
     keyCams:     '7',
     keyAttrPanel: '8',
-    keyFps: 'alt+u',
     keyClassPrev: 'arrowup',
     keyClassNext: 'arrowdown',
     classCycle: ['卡车', '货车', '油罐车', '卡车-挂车', '货车-挂车', '油罐车-挂车'],
@@ -161,9 +173,9 @@
     attrKeyToast: false,
     attrPanelHideRe: '',
     attrPanelShort: [],
-    fpsMode: 'off',
-    fpsTarget: 'screen',
-    fps3d: false,
+    fpsMode: 'screen',      /* cố định: bỏ giới hạn FPS theo tần số màn hình */
+    fpsTarget: 'screen',    /* cố định: FPS tối đa theo màn hình */
+    fps3d: true,            /* cố định: script tự vẽ lại cảnh 3D */
     fpsShow: true,
     tabPauseHidden: true,
     toolKeyMap: [['1','['],['2',']'],['mouseforward','.'],['mouseback',','],['shift+mouseforward','shift+.'],['shift+mouseback','shift+,'],['alt','alt+v']],
@@ -838,7 +850,20 @@
       ['widthValue', 'Chiều rộng cố định (m) – dùng cho phím đặt chiều rộng'],
       ['ctrlDragSnap', 'Bật Ctrl+kéo khít'],
       ['recolorBox', 'Điểm mây trong box đổi màu ngay sau khi dùng chức năng của tool (giống khi kéo tay)'],
+      ['pauseWhileDragging', 'Tạm dừng các việc định kỳ của tool khi đang kéo/zoom (nhường CPU cho nền tảng)'],
+      ['hoverSyncKeys', 'Đồng bộ view dưới con trỏ ngay lúc bấm A/W/S/D/Q/E (sửa lỗi nhầm view khi chuyển nhanh front/top/side)'],
+      ['fpsHoverBoost', 'Rê chuột trên view: tạm bỏ giới hạn FPS của script __toiUu (nếu có cài) để hover không bị trễ'],
       ['quietEdit', 'Tắt thông báo khi chức năng đổi box chạy xong (B, V, khít đầu/đuôi, chiều rộng…) – lỗi và cảnh báo vẫn hiện'],
+      ['#', 'Mũi tên hướng đỏ (ảnh 2D 7 cam + 3D)'],
+      ['keyArrow', 'Phím bật/tắt mũi tên hướng của từng box đang hiển thị'],
+      ['showArrows', 'Hiện mũi tên hướng (box bị ẩn thì không có mũi tên)'],
+      ['arrowExt', 'Độ dài mũi tên thò ra ngoài mặt đầu box (m)'],
+      ['arrowFlip', 'Đảo chiều mũi tên (nếu đầu box là phía ngược lại)'],
+      ['arrowOrtho', 'Vẽ mũi tên cả trong view front/side/top (mặc định tắt cho nhẹ; chỉ vẽ trong 3D chính)'],
+      ['arrowWidth', 'Độ dày thân mũi tên trên ảnh 2D (px)'],
+      ['arrowHead', 'Cỡ đầu mũi tên (nón) – 1 = mặc định, lớn hơn = đầu to hơn (cả 2D và 3D)'],
+      ['arrow3dSize', 'Độ dày thân mũi tên trong 3D (kích thước chấm, px)'],
+      ['#', 'Khác'],
       ['ctrlLockHeight', 'Ctrl+kéo chỉ di chuyển ngang – giữ nguyên độ cao'],
       ['#', 'Dán sát đất'],
       ['redOnly', 'Chỉ dùng điểm đất màu ĐỎ'],
@@ -858,10 +883,6 @@
       ['camArrange', 'Cách xếp camera FOCUS', ['auto', 'h', 'v'], ['Tự động (trong ô canvas = ngang)', 'Ngang', 'Dọc']],
       ['camZ', 'Lớp hiển thị bảng FOCUS (z-index) – thấp hơn hộp thoại nền tảng; tăng nếu bị ô khác che'],
       ['#', 'FPS'],
-      ['keyFps', 'Bật/tắt mở khoá FPS vẽ 3D'],
-      ['fps3d', 'Mở khoá FPS vẽ 3D (script tự vẽ lại cảnh 3D)'],
-      ['fpsTarget', 'FPS tối đa khi mở khoá', ['screen', '60', '90', '120', '144', '165', '240', '360'], ['Theo màn hình', '60', '90', '120', '144', '165', '240', '360']],
-      ['fpsMode', 'Chế độ FPS', ['off', 'screen', 'unlock'], ['Mặc định (không can thiệp)', 'Bỏ giới hạn – theo tần số màn hình', 'Mở khoá – vượt nhịp trình duyệt']],
       ['fpsShow', 'Hiện đồng hồ FPS ở góc dưới trái'],
       ['#', 'Hệ thống'],
       ['histKey', 'Phím của tool dùng để ghi lịch sử Z – a / w / s / d / q / e']
@@ -1835,6 +1856,69 @@
   }
   window.__doAlignClass = doAlignClass;
   var _cam = null, _bmCache = {};
+  var _camDim = {};   /* FIX#5: nhớ kích thước ảnh từng camera -> chỉ tải ảnh của cam THẤY box (không tải đủ 7 cam mỗi lần đổi frame) */
+  /* ---- FIX#5: bắt đổi frame/đổi box NGAY (mỗi khung hình ~16ms) thay vì chờ polling 350-400ms + bị uiBusy chặn ---- */
+  var _fw = { raf: 0, f: NaN, id: undefined, nullAt: 0, camAt: 0, camT: 0 };
+  function fwTick() {
+    _fw.raf = 0;
+    if (!_cam && !_ap) return;                         /* không còn panel nào -> dừng vòng lặp */
+    _fw.raf = window.requestAnimationFrame(fwTick);
+    var S = window.lidarInstances, V = window.view; if (!S || !V || document.hidden) return;
+    var C = { S: S, V: V };                            /* không gọi ctx() ở đây: findLoader có thể quét nặng nếu chưa tìm thấy */
+    var f = curFrame(C), id = selectedId(C), now = performance.now();
+    if (id == null && _fw.id != null) {                /* nền tảng đôi khi bỏ chọn rồi chọn lại box khi đổi frame -> đợi 150ms tránh nháy */
+      if (!_fw.nullAt) _fw.nullAt = now;
+      if (now - _fw.nullAt < 150) return;
+    }
+    _fw.nullAt = 0;
+    if (f === _fw.f && id === _fw.id) return;
+    _fw.f = f; _fw.id = id;
+    if (_ap) { try { apRender(false); } catch (e) { console.warn('[snap] fw attr', e); } }
+    if (_cam) fwCam();
+  }
+  function fwCam() {
+    var gap = 70 - (performance.now() - _fw.camAt);    /* kéo thanh frame liên tục: giới hạn ~14 lần/giây, lần cuối luôn được vẽ */
+    if (gap > 0) { if (!_fw.camT) _fw.camT = setTimeout(function () { _fw.camT = 0; fwCamNow(); }, gap); return; }
+    fwCamNow();
+  }
+  function fwCamNow() {
+    if (!_cam || camHidden()) return;
+    var C = ctx(); if (!C) return;
+    _fw.camAt = performance.now();
+    if (selectedId(C) !== _cam.id) _cam.zoom = null;
+    _cam.sig = camSigOf(C);
+    camRender();
+  }
+  function fwEnsure() {
+    if (_fw.raf) return;
+    var S = window.lidarInstances, V = window.view;
+    if (S && V) { var C = { S: S, V: V }; _fw.f = curFrame(C); _fw.id = selectedId(C); }
+    _fw.raf = window.requestAnimationFrame(fwTick);
+  }
+  function camSigOf(C2) {
+    var id = selectedId(C2), f = curFrame(C2), t = id != null && C2.S.instancesTree[id], c = t && t.cubes && t.cubes[f];
+    if (!c) return null;
+    var p0 = c.position || {}, r0 = c.rotation || {}, d0 = c.dimension || {};
+    return [p0.x, p0.y, p0.z, r0.x, r0.y, r0.z, d0.x, d0.y, d0.z];
+  }
+  /* tải trước ảnh các frame kề bên (chỉ cam thấy box) lúc rảnh -> chuyển frame là có ảnh ngay */
+  function camPrefetch(id, f) {
+    var N = CFG.camPrefetch == null ? 1 : +CFG.camPrefetch; if (!(N > 0)) return;
+    var run = function () {
+      if (!_cam || _cam.frame !== f || _cam.id !== id) return;   /* người dùng đã đi chỗ khác */
+      var C2 = ctx(); if (!C2) return;
+      for (var d = 1; d <= N; d++) [f + d, f - d].forEach(function (g) {
+        if (g < 0) return;
+        var s2 = imageSource(C2, g); if (s2.via !== 'loader' || !s2.list.length) return;   /* via 'react' chỉ có ảnh frame hiện tại -> không prefetch */
+        for (var k = 0; k < s2.list.length; k++) {
+          var dm = _camDim[k]; if (!dm) continue;
+          var cast = projectCast(C2.S, id, g, k);
+          if (cast && castVisible(cast, dm)) camBitmap(s2, g, k);
+        }
+      });
+    };
+    if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 800 }); else setTimeout(run, 60);
+  }
 
 /* ============================================================
  * @MODULE[7]  FOCUS 7 CAMERA
@@ -1902,7 +1986,8 @@
         return tryAt(0);
       });
     p.then(function (r) { if (!r.img) delete _bmCache[key]; });
-    var ks = Object.keys(_bmCache); if (ks.length > 40) delete _bmCache[ks[0]];
+    /* FIX#3: tăng cache lên 80 ảnh – tránh re-fetch khi chuyển qua lại giữa các frame */
+    var ks = Object.keys(_bmCache); if (ks.length > 80) { delete _bmCache[ks[0]]; delete _bmCache[ks[1]]; }
     return (_bmCache[key] = p);
   }
   function projectCast(S, id, f, n) {
@@ -1959,14 +2044,17 @@
     for (var k = 0; k < n; k++) (function (k) {
       var cast = projectCast(S, id, f, k);
       if (!cast) return;
+      var dm = _camDim[k];
+      if (dm && !castVisible(cast, dm)) { jobs.push(Promise.resolve({ k: k, vis: 0, skip: true })); return; }   /* FIX#5: đã biết cỡ ảnh, cam này không thấy box -> khỏi tải ảnh */
       jobs.push(camBitmap(src, f, k).then(function (r) {
-        var img = r && r.img; return { k: k, cast: cast, img: img, err: r && r.err, vis: img ? castVisible(cast, img) : 0 };
+        var img = r && r.img; if (img && img.width) _camDim[k] = { width: img.width, height: img.height };
+        return { k: k, cast: cast, img: img, err: r && r.err, vis: img ? castVisible(cast, img) : 0 };
       }).catch(function (e) { return { k: k, vis: 0, err: e && e.message }; }));
     })(k);
     Promise.all(jobs).then(function (list) {
       if (!_cam || _cam.token !== token) return;
       var seen = list.filter(function (o) { return o.vis > 0; }).sort(function (a, b) { return b.vis - a.vis; });
-      var errs = list.filter(function (o) { return !o.img; });
+      var errs = list.filter(function (o) { return !o.img && !o.skip; });
       if (errs.length && !seen.length) _cam.msg.textContent = errs[0].err || 'không tải được ảnh';
       if (!seen.length) return note(name + ' không xuất hiện ở camera nào (Unavailable ở cả ' + n + ' camera).');
       var show = _cam.zoom != null ? seen.filter(function (o) { return o.k === _cam.zoom; }) : seen.slice(0, CFG.camShowMax);
@@ -1986,6 +2074,7 @@
       show.forEach(function (o, i) { var lab = G.children[i].querySelector('.lab'); lab.textContent = 'cam ' + (o.k + 1); });
       _cam.items = show; _cam.itemsId = id;
       camFit();
+      try { camPrefetch(id, f); } catch (e) {}
     });
   }
   function camHidden() { return !!_ly.tabNat || !!(_ly.max && _ly.max !== 'cams' && !_ly.ed && CFG.layoutOn && !_ly.sus); }
@@ -2100,15 +2189,14 @@
     _cam.btnSize.onclick = function () { _cam.full = !_cam.full; camLayout(); camFitSoon(); };
     _cam.onResize = function () { if (_cam) { camLayout(); camFitSoon(); } }; window.addEventListener('resize', _cam.onResize);
     if (window.ResizeObserver) { _cam.ro = new ResizeObserver(camFitSoon); _cam.ro.observe(_cam.grid); }
-    camLayout(); setTimeout(camRender, 30);
+    camLayout(); setTimeout(camRender, 30); fwEnsure();
     _cam.timer = setInterval(function () {
-      var C2 = ctx(); if (!_cam || !C2 || document.hidden || uiBusy() || camHidden()) return;
-      var id = selectedId(C2), f = curFrame(C2), t = id != null && C2.S.instancesTree[id], c = t && t.cubes && t.cubes[f];
-      var sig = null;
-      if (c) { var p0 = c.position || {}, r0 = c.rotation || {}, d0 = c.dimension || {}; sig = [p0.x, p0.y, p0.z, r0.x, r0.y, r0.z, d0.x, d0.y, d0.z]; }
+      /* FIX#3: 350ms thay 200ms; bỏ qua khi _ptrDown để tránh lag khi kéo box */
+      var C2 = ctx(); if (!_cam || !C2 || document.hidden || uiBusy() || camHidden() || _ptrDown) return;
+      var id = selectedId(C2), f = curFrame(C2), sig = camSigOf(C2);
       var same = sig === _cam.sig || (sig && _cam.sig && sig.every(function (v, i) { return v === _cam.sig[i]; }));
       if (f !== _cam.frame || id !== _cam.id || !same) { _cam.sig = sig; if (id !== _cam.id) _cam.zoom = null; camRender(); }
-    }, 200);
+    }, 350);
   }
   window.__toggleCams = toggleCams;
   /* ===== Bảng thuộc tính (chọn = đổi ngay) ===== */
@@ -2657,8 +2745,22 @@
     fl.forEach(function (fx) {
       var cur = apObj(C, id, f, fx)[fx.f.name], vals = (Array.isArray(cur) ? cur : [cur]).filter(function (v) { return v != null && v !== ''; }).map(String);
       var txt = vals.map(function (v) { var o = (fx.f.options || []).filter(function (x) { return String(x.value) === v; })[0]; return shortVal(fx.f, o && o.label != null ? String(o.label) : v); }).join(', ');
-      var ln = document.createElement('div'); ln.className = 'sl' + (txt ? '' : ' no'); ln.textContent = txt || '—'; ln.title = String(fx.f.label || fx.f.title || fx.f.name);
+      /* FIX#4: tính màu chữ cho valid (xanh/đỏ) và occ (xanh/<30%=xanh, 30-70%=vàng, >70%=đỏ) */
       var tx = fieldText(fx.f), rk = reV && reV.test(tx) ? 0 : reO && reO.test(tx) ? 1 : reC && reC.test(tx) ? 2 : -1;
+      var clrCls = '';
+      if (txt && rk === 0) {
+        /* valid: Hợp lệ=xanh, Không hợp lệ=đỏ */
+        clrCls = /không hợp lệ|invalid|\bnot valid\b/i.test(txt) ? ' err' : ' ok';
+      } else if (txt && rk === 1) {
+        /* occ: <30% / slightly occluded = xanh; 30-70% / occluded = vàng; >70% / heavily occluded = đỏ
+           shortVal có thể trả về chuỗi % (nếu label có %) hoặc label gốc (nếu không có %) */
+        var occTxt = txt.toLowerCase();
+        if (/heavily|>\s*70|70\s*[-–~]\s*100|≥\s*70/.test(occTxt)) clrCls = ' err';
+        else if (/slightly|<\s*30/.test(occTxt)) clrCls = ' ok';
+        else if (/\boccluded\b|30\s*[-–~]\s*70/.test(occTxt)) clrCls = ' warn';
+        /* không xác định được level → không tô màu */
+      }
+      var ln = document.createElement('div'); ln.className = 'sl' + (txt ? clrCls : ' no'); ln.textContent = txt || '—'; ln.title = String(fx.f.label || fx.f.title || fx.f.name);
       if (rk >= 0) s3Items.push({ rk: rk, el: ln }); else sm.appendChild(ln);
     });
     s3Items.sort(function (a, b) { return a.rk - b.rk; }).forEach(function (x) { s3.appendChild(x.el); });
@@ -2709,6 +2811,7 @@
       + '.op.on{background:#6a6a72;border-color:#8a8a92;color:#fff;font-weight:600}'
       + '.note{color:#b0b0b5;padding:8px 2px}.sum{padding-bottom:6px;border-bottom:1px solid #3d3d43;display:flex;flex-direction:column;gap:4px}.sl{color:#e6e6e8;line-height:1.3;word-break:break-word}.sl.no{color:#77777d}.rr{display:flex;align-items:center;gap:4px}.rn{flex:1 1 auto;min-width:0;color:#c8c8cc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ri{flex:0 0 76px;width:76px;min-width:0;background:#34343a;color:#e6e6e8;border:1px solid #4a4a50;border-radius:6px;padding:2px 4px;font:12px Segoe UI,Arial,sans-serif}.ri:focus{outline:0;border-color:#8a8a92}.rx{flex:0 0 auto;padding:0 6px}.rc{display:flex;flex-direction:column;gap:3px;padding:3px 0}.rc.off{opacity:.65}.rtop{display:flex;align-items:center;min-width:0}.rl{flex:0 0 auto;border:1px solid #6a6a72;border-radius:3px;padding:2px 6px;color:#e6e6e8;background:#26262a;font-weight:600}.rln{flex:0 0 8px;height:1px;background:#6a6a72}.rbr{flex:0 0 7px;align-self:stretch;margin:10px 0;border:1px solid #6a6a72;border-right:0}.rcol{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}.re{display:flex;align-items:center;min-width:0;height:20px;gap:4px;padding-left:4px;color:#b8b8bd}.re.me{color:#fff;font-weight:600}.en{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.eno{flex:0 0 auto}.re .rx{padding:0 5px;line-height:16px;font-size:11px}.re .ri{height:18px;padding:0 3px;font-size:11px}.rt{white-space:pre;font-family:Consolas,Menlo,monospace}.rr.root .rt{color:#fff;font-weight:600}.rb{flex:0 0 auto;color:#8a8a92;font-size:11px}'
       + '.s3{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 0}.s3 .sl{flex:0 0 auto}.s3 .sl+.sl:before{content:"\\00a0-\\00a0";color:#77777d}'
+      + '.sl.ok{color:#4caf80;font-weight:600}.sl.warn{color:#f5c842;font-weight:600}.sl.err{color:#e05555;font-weight:600}'
       + '.foot{display:flex;gap:6px;padding:6px 8px;border-top:1px solid #3d3d43;background:#222226;flex:0 0 auto}.foot button{flex:1 1 0;padding:4px 6px}'
       + '.grip{position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;background:linear-gradient(135deg,transparent 50%,#6a6a72 50%,#6a6a72 60%,transparent 60%,transparent 70%,#6a6a72 70%,#6a6a72 80%,transparent 80%)}'
       + '</style><div class="wrap"><div class="bar"><b>Thuộc tính</b><span class="who"></span><button class="pin"></button><button class="x" title="Đóng (' + String(CFG.keyAttrPanel).toUpperCase() + ')">✕</button></div>'
@@ -2741,8 +2844,8 @@
       var R1 = lyRects();
       if (lyOff(R1.attr)) { var sh = R1.attr && R1.attr.w >= LY_MIN && R1.attr.h >= LY_MIN ? R1.attr : LY_SHOW.attr; R1.attr = { x: sh.x, y: sh.y, w: sh.w, h: sh.h, off: false }; CFG.layoutRects = R1; cfgSave(); lyApply(); }
     }
-    apLayout(); try { apTrack(); } catch (e) {} apRender(true);
-    _ap.timer = setInterval(function () { if (!_ap || document.hidden || uiBusy()) return; try { apRender(false); } catch (e) { console.warn('[snap] attr panel', e); } }, 200);
+    apLayout(); try { apTrack(); } catch (e) {} apRender(true); fwEnsure();
+    _ap.timer = setInterval(function () { if (!_ap || document.hidden || uiBusy()) return; try { apRender(false); } catch (e) { console.warn('[snap] attr panel', e); } }, 400); /* FIX#3: 400ms giảm CPU overhead */
   }
   window.__toggleAttrPanel = toggleAttrPanel;
   var _convertArm = { t: 0, key: '' }, _seenCats = {}, _ontoSet = {};
@@ -3151,8 +3254,13 @@
     if (e.button === 2) {
       var t0 = e.composedPath ? e.composedPath()[0] : e.target, ok = !!t0 && !!t0.tagName;
       if (ok && t0.tagName !== 'CANVAS') {
-        if (t0.getRootNode && t0.getRootNode() !== document) ok = false;
-        else if (t0.closest && t0.closest('.b-Sidebar,.b-ShapeLabel,input,textarea,select,button,[contenteditable]')) ok = false;
+        var root0 = t0.getRootNode ? t0.getRootNode() : document;
+        /* FIX#2: shadow DOM của bảng thuộc tính (_ap) được phép – người dùng chuột phải vào relation panel
+           cũng cần nhảy tới frame tốt nhất. Chỉ block shadow DOM của các panel khác (cam, menu…) */
+        var inAttrPanel = _ap && _ap.host && (_ap.host === e.target || _ap.host.contains(e.target) ||
+                          (_ap.root && (root0 === _ap.root || _ap.root.contains(t0))));
+        if (root0 !== document && !inAttrPanel) ok = false;
+        else if (!inAttrPanel && t0.closest && t0.closest('.b-Sidebar,.b-ShapeLabel,input,textarea,select,button,[contenteditable]')) ok = false;
       }
       var Cd = ok ? ctx() : null;
       _rightInfo = ok ? { x: e.clientX, y: e.clientY, t: Date.now(), id: Cd ? selectedId(Cd) : null } : null;
@@ -4729,11 +4837,12 @@
  * hook updateCubeMatrix, đợi mesh cập nhật rồi phát lại đúng sự kiện đó.
  * Tắt/bật: CFG.recolorBox (menu alt+s). Gỡ lỗi: window.__snapRecolorProbe()
  * ============================================================ */
-  var _ptrDownAt = 0, _wheelUntil = 0;
-  function uiBusy() { var n = Date.now(); return (_ptrDown && n - _ptrDownAt < 60000) || n < _wheelUntil; }   // đang kéo/zoom -> tool tạm dừng việc định kỳ để nhường CPU cho nền tảng
+  var _recolorLast = 0, _recolorFirst = 0, _ptrDownAt = 0, _wheelUntil = 0, _moveAt = 0;
+  function uiBusy() { if (CFG.pauseWhileDragging === false) return false; var n = Date.now(); return (_ptrDown && n - _ptrDownAt < 60000) || n < _wheelUntil || n - _moveAt < 250; }   // đang kéo/zoom -> tool tạm dừng việc định kỳ để nhường CPU cho nền tảng
   var _ptrDown = false, _recolorT = 0, _recolorBusy = false, _recolorQuiet = 0, _recolorTry = 0, _ctl = null, _recolorWarn = false;
   ['pointerdown', 'mousedown'].forEach(function (n) { window.addEventListener(n, function () { _ptrDown = true; _ptrDownAt = Date.now(); }, true); });
   window.addEventListener('wheel', function () { _wheelUntil = Date.now() + 250; }, { capture: true, passive: true });
+  window.addEventListener('pointermove', function () { _moveAt = Date.now(); }, { capture: true, passive: true });   // đang rê chuột -> các việc định kỳ của tool nhường CPU
   ['pointerup', 'pointercancel', 'mouseup', 'blur', 'dragend'].forEach(function (n) { window.addEventListener(n, function () { _ptrDown = false; }, true); });
   function findCubeCtl(V, sc) {
     if (_ctl && _ctl.object === sc && typeof _ctl.dispatchEvent === 'function') return _ctl;
@@ -4759,11 +4868,13 @@
   }
   function scheduleRecolor(id, f) {
     if (!CFG.recolorBox || _recolorBusy || _restoring || _ptrDown || Date.now() < _recolorQuiet) return;
+    // debounce cuối: chỉ tô lại sau khi ngừng đổi box ~150ms (không quá 700ms kể từ lần đổi đầu) -> giữ phím lặp không bị khựng vì updateHighlightPoints (~28ms/lần)
+    var nw = Date.now(); if (!_recolorFirst) _recolorFirst = nw;
     if (_recolorT) clearTimeout(_recolorT);
-    _recolorTry = 0; _recolorT = setTimeout(recolorNow, 40);
+    _recolorTry = 0; _recolorT = setTimeout(recolorNow, Math.max(0, Math.min(150, _recolorFirst + 700 - nw)));
   }
   function recolorNow() {
-    _recolorT = 0;
+    _recolorT = 0; _recolorLast = Date.now(); _recolorFirst = 0;
     try {
       if (!CFG.recolorBox || _ptrDown || _recolorBusy) return;
       var C = ctx(); if (!C) return;
@@ -4776,12 +4887,12 @@
       var ctl = findCubeCtl(C.V, sc), wasR = _restoring;
       _recolorBusy = true; _restoring = true;
       try {
-        var V = C.V, hl = typeof V.updateHighlightPoints === 'function' ? 'updateHighlightPoints' : (typeof V.updateHighlightPointsDebounce === 'function' ? 'updateHighlightPointsDebounce' : '');
+        var V = C.V, hl = typeof V.updateHighlightPointsDebounce === 'function' ? 'updateHighlightPointsDebounce' : (typeof V.updateHighlightPoints === 'function' ? 'updateHighlightPoints' : '');   // ưu tiên bản debounce của nền tảng (nhẹ hơn)
         if (hl) {
           var tried = [[sc], [], [id, f]], okc = false;
           for (var ti = 0; ti < tried.length && !okc; ti++) { try { V[hl].apply(V, tried[ti]); okc = true; } catch (e1) { if (ti === tried.length - 1) console.warn('[snap] recolor ' + hl, e1); } }
         }
-        if (ctl) { ctl.dispatchEvent({ type: 'objectChange' }); ctl.dispatchEvent({ type: 'change' }); }
+        if (ctl) { ctl.dispatchEvent({ type: 'change' }); }
         else if (hl) { /* da goi ham to mau cua nen tang */ }
         else {
           if (!_recolorWarn) { _recolorWarn = true; console.warn('[snap] recolor: khong tim thay TransformControls, dung chon lai box. Chay __snapRecolorProbe() de gui lai ket qua.'); }
@@ -4794,7 +4905,7 @@
           C.S.updateCubeMatrix(id, f, before); _emit(C.S);
           console.warn('[snap] recolor: su kien lam doi box, da khoi phuc lai');
         }
-      } finally { _restoring = wasR; _recolorBusy = false; _recolorQuiet = Date.now() + 250; }
+      } finally { _restoring = wasR; _recolorBusy = false; _recolorQuiet = Date.now() + 30; }
     } catch (e) { _recolorBusy = false; console.warn('[snap] recolor', e); }
   }
   window.__snapRecolorNow = recolorNow;
@@ -4811,6 +4922,342 @@
     if (ctl && ctl._listeners && ctl._listeners.change) out.src.changeHandlers = ctl._listeners.change.map(function (h) { return String(h).slice(0, 3000); });
     out.ctlListeners = ctl && ctl._listeners ? Object.keys(ctl._listeners) : null;
     console.log('[snap] recolor probe', out); return out;
+  };
+
+/* ============================================================
+ * @MODULE[shift+f]  MŨI TÊN HƯỚNG ĐỎ (ảnh 2D 7 cam + 3D)
+ * Phím: shift+f (keyArrow) bật/tắt · CFG.showArrows, arrowExt, arrowFlip
+ * Hướng box = trục +z cục bộ (đầu xe, cùng quy ước với khít đầu/đuôi), mũi tên đi từ tâm box ra ngoài mặt đầu.
+ * 2D: bọc S.getProjectCast + cast.draw -> vẽ ngay trên canvas của nền tảng cùng phép chiếu/zoom,
+ *     nên CHỈ box mà nền tảng đang vẽ (không bị ẩn) mới có mũi tên. Điểm 3D được chiếu bằng chính
+ *     getProjectCast trên bản sao store (không sửa dữ liệu thật).
+ * 3D: 1 LineSegments đỏ trong scene, chỉ cho mesh box đang hiện (visible); đi theo khi kéo box.
+ * Gỡ lỗi: window.__snapArrowProbe()
+ * ============================================================ */
+  var _arr = { gpc: null, cache: new Map(), ok2d: null, st: { tag: 0, draw: 0, fail: 0, arrows3d: 0 }, T: null, S: null, meshes: null, rk: '', scanAt: 0, ver: 0, cfgKey: '', n: 0, objs: null, mat: null, msz: 0, geo: null, att: null, buf: null, why3: '', raf: 0, last: 0, warned: {} };
+  var _cost = {};
+  function costWrap(name, fn) { return function () { var t0 = performance.now(); try { return fn.apply(this, arguments); } finally { var d = performance.now() - t0, c = _cost[name] || (_cost[name] = { n: 0, ms: 0, max: 0 }); c.n++; c.ms += d; if (d > c.max) c.max = d; } }; }
+  window.__snapCost = function (reset) { var o = {}; Object.keys(_cost).forEach(function (k) { var c = _cost[k]; o[k] = { calls: c.n, totalMs: +c.ms.toFixed(1), avgMs: +(c.ms / c.n).toFixed(3), maxMs: +c.max.toFixed(1) }; }); if (console.table) console.table(o); else console.log(o); if (reset) _cost = {}; return o; };
+  var ARR_CAP = 400, ARR_VPA = 30;   // tối đa 400 mũi tên, mỗi mũi tên 30 đỉnh (3 đoạn x 5 lớp cho dày)
+  function arrExt() { return CFG.arrowExt == null ? 1 : +CFG.arrowExt; }
+  function arrHeadSize() { var k = +CFG.arrowHead || 1; return { hl: 0.8 * k, hw: 0.28 * k }; }   // dài / bán kính đáy của đầu nón (m)
+  function arrLocal(c) {
+    var sg = CFG.arrowFlip ? -1 : 1, L = (c.dimension.z || 0) / 2 + arrExt(), H = arrHeadSize(), b = L - H.hl;
+    return [[0, 0, 0], [0, 0, sg * L], [-H.hw, 0, sg * b], [H.hw, 0, sg * b], [0, -H.hw, sg * b], [0, H.hw, sg * b]];   // tâm, đỉnh, 4 điểm đáy nón
+  }
+  function arrWorld(c, loc) {
+    var R = eulerMat(c.rotation), p = c.position;
+    return loc.map(function (l) { return { x: p.x + R[0][0] * l[0] + R[0][1] * l[1] + R[0][2] * l[2], y: p.y + R[1][0] * l[0] + R[1][1] * l[1] + R[1][2] * l[2], z: p.z + R[2][0] * l[0] + R[2][1] * l[1] + R[2][2] * l[2] }; });
+  }
+  function arrCenter(cast) {
+    try { cast.computeBoundingBox && cast.computeBoundingBox(); } catch (e) {}
+    if (!cast || !isFinite(cast.x) || !isFinite(cast.w) || !isFinite(cast.y) || !isFinite(cast.h)) return null;
+    return [cast.x + cast.w / 2, cast.y + cast.h / 2, cast.w, cast.h];
+  }
+  /* Chiếu 1 điểm thế giới bằng getProjectCast gốc trên bản sao store (cube thật không bị đụng tới) */
+  function arrFake(S, id, f, c, w, n, type) {
+    var t = S.instancesTree[id], fk = Object.create(S), tr = Object.create(S.instancesTree), cubes = {}, tt = Object.create(t);
+    cubes[f] = Object.assign({}, c, { position: { x: w.x, y: w.y, z: w.z }, dimension: { x: 0.02, y: 0.02, z: 0.02 }, frameNum: f });
+    Object.defineProperty(tt, 'cubes', { value: cubes });
+    tr[id] = tt;
+    Object.defineProperty(fk, 'instancesTree', { value: tr });
+    return _arr.gpc.call(fk, id, f, f, n, type);
+  }
+  function arrPts2D(S, id, f, n, type) {
+    if (_arr.ok2d === false || !_arr.gpc) return null;
+    var e = effCube(S, id, f); if (!e) return null;
+    var c = e.cube, p = c.position, r = c.rotation, d = c.dimension;
+    var key = id + '|' + f + '|' + n + '|' + [p.x, p.y, p.z, r.x, r.y, r.z, d.z].map(function (v) { return Math.round(v * 1e4); }).join(',') + '|' + arrExt() + '|' + (+CFG.arrowHead || 1) + (CFG.arrowFlip ? 'F' : '');
+    var hit = _arr.cache.get(key); if (hit !== undefined) return hit;
+    var out = null;
+    try {
+      var wp = arrWorld(c, arrLocal(c)), pts = [], ok = true;
+      for (var i = 0; i < wp.length && ok; i++) {
+        var cs = arrFake(S, id, f, c, wp[i], n, type), ct = cs && arrCenter(cs);
+        if (!ct) ok = false; else pts.push(ct);
+      }
+      if (ok && _arr.ok2d === null) {   // kiểm chứng 1 lần: điểm chiếu phải nhỏ và nằm trong hộp chiếu thật
+        var real = arrCenter(_arr.gpc.call(S, id, f, f, n, type)), t0 = pts[0];
+        var good = !!(real && real[2] > 0 && t0[2] < real[2] * 0.7 && t0[3] < real[3] * 0.7 + 1 && Math.abs(t0[0] - real[0]) <= real[2] * 0.6 + 2 && Math.abs(t0[1] - real[1]) <= real[3] * 0.6 + 2);
+        if (real) { _arr.ok2d = good; if (!good) console.warn('[snap] mui ten 2D: khong chieu duoc diem tuy y bang getProjectCast – tat mui ten 2D', { real: real, tail: t0 }); }
+        if (!good) ok = false;
+      }
+      if (ok) out = pts;
+    } catch (err) { _arr.st.fail++; }
+    if (_arr.cache.size > 3000) _arr.cache.clear();
+    _arr.cache.set(key, out);
+    return out;
+  }
+  function arrDraw2D(g, m, ox, oy, pts) {
+    var X = function (q) { return q[0] * m + ox; }, Y = function (q) { return q[1] * m + oy; };
+    var len = Math.hypot(X(pts[1]) - X(pts[0]), Y(pts[1]) - Y(pts[0]));
+    if (!isFinite(len) || len > 8000) return;
+    _arr.st.draw++;
+    var w = Math.max(0.5, +CFG.arrowWidth || 1);
+    var tri = function (a, b, c) { g.beginPath(); g.moveTo(X(a), Y(a)); g.lineTo(X(b), Y(b)); g.lineTo(X(c), Y(c)); g.closePath(); };
+    g.save(); g.lineCap = 'round'; g.lineJoin = 'round';
+    g.beginPath(); g.moveTo(X(pts[0]), Y(pts[0])); g.lineTo(X(pts[1]), Y(pts[1]));
+    g.strokeStyle = 'rgba(0,0,0,.55)'; g.lineWidth = w + 1.4; g.stroke();                       // viền đen mảnh cho dễ nhìn trên nền sáng
+    g.fillStyle = '#ff1f1f'; g.strokeStyle = 'rgba(0,0,0,.55)'; g.lineWidth = 1;
+    tri(pts[1], pts[2], pts[3]); g.fill(); g.stroke();                                         // đầu nón: mặt ngang
+    tri(pts[1], pts[4], pts[5]); g.fill(); g.stroke();                                         // đầu nón: mặt đứng (không bị dẹp khi camera nhìn ngang)
+    g.beginPath(); g.moveTo(X(pts[0]), Y(pts[0])); g.lineTo(X(pts[1]), Y(pts[1]));
+    g.strokeStyle = '#ff2a2a'; g.lineWidth = w; g.stroke();                                      // thân mảnh
+    g.restore();
+  }
+  function arrWrapCast(cast, id, f, n, type) {
+    if (typeof cast.draw !== 'function' || cast.draw.__arr) return;
+    var od = cast.draw, pts, ver = -1; _arr.st.tag++;
+    var d = function (g, m, ox, oy) {
+      var r = od.apply(this, arguments);
+      if (CFG.showArrows) {
+        try {
+          if (ver !== _arr.ver) { ver = _arr.ver; pts = undefined; }
+          if (pts === undefined) pts = arrPts2D(_arr.S, id, f, n, type);   // chỉ tính 1 lần cho mỗi cast (zoom/pan vẽ lại hàng chục lần/giây không tốn thêm)
+          if (pts) arrDraw2D(g, m, ox, oy, pts);
+        } catch (e) { _arr.st.fail++; pts = null; }
+      }
+      return r;
+    };
+    d.__arr = true; cast.draw = d;
+  }
+  function arrInstall(S) {
+    if (!S || typeof S.getProjectCast !== 'function' || S.getProjectCast.__arr) return;
+    var orig = S.getProjectCast; _arr.gpc = orig; _arr.S = S;
+    var w = function (id, f, f2, n, type) {
+      var cast = orig.apply(this, arguments);
+      try { if (cast && CFG.showArrows) arrWrapCast(cast, id, f, n, type); } catch (e) {}
+      return cast;
+    };
+    w.__arr = true; S.getProjectCast = w;
+  }
+  /* ---- 3D: vẽ bằng chuỗi chấm (THREE.Points) – lớp Points/BufferGeometry/Material lấy từ chính point cloud của nền tảng ---- */
+  var ARR_MAXPTS = 150000;
+  function arrHas(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+  /* lớp con trực tiếp của class gốc (gốc nhận biết bằng 1 method riêng) – tránh subclass tuỳ biến của nền tảng */
+  function arrBaseOf(inst, rootMethod) {
+    var chain = [], p = Object.getPrototypeOf(inst);
+    while (p && !arrHas(p, rootMethod)) { chain.push(p); p = Object.getPrototypeOf(p); }
+    return p && chain.length ? chain[chain.length - 1].constructor : null;
+  }
+  function arrRoots(C) {
+    var V = C.V, out = [], add = function (o) { if (!o) return; var r = o; while (r.parent) r = r.parent; if (out.indexOf(r) < 0) out.push(r); };
+    add(V.selectedCube);
+    try { var L = C.L, e = L && L.pointsObjectMap && L.pointsObjectMap[curFrame(C)]; if (e && e.lidar) add(e.lidar); } catch (x) {}
+    if (!out.length) {
+      var seen = new Set(), q = [[V, 0]], n = 0;
+      while (q.length && n++ < 2000) {
+        var it = q.shift(), o = it[0];
+        if (!o || typeof o !== 'object' || seen.has(o)) continue; seen.add(o);
+        if (o.nodeType || ArrayBuffer.isView(o) || o.isBufferGeometry || o.isMaterial) continue;
+        if (o.isScene) { add(o); continue; }
+        if (it[1] >= 2) continue;
+        var ks; try { ks = Object.keys(o); } catch (e2) { continue; }
+        for (var i = 0; i < ks.length && i < 120; i++) { var v; try { v = o[ks[i]]; } catch (e3) { continue; } if (v && typeof v === 'object') q.push([v, it[1] + 1]); }
+      }
+    }
+    return out;
+  }
+  function arrBuildT(roots) {
+    if (_arr.T) return _arr.T;
+    var TH = window.THREE;
+    if (TH && TH.Points && TH.BufferGeometry && TH.BufferAttribute && TH.PointsMaterial) return (_arr.T = { mode: 'pm', P: TH.Points, BG: TH.BufferGeometry, Attr: TH.BufferAttribute, M: TH.PointsMaterial });
+    var pt = null;
+    roots.forEach(function (r) { r.traverse(function (o) { if (!pt && o.isPoints && o.geometry && o.geometry.isBufferGeometry && o.material && !Array.isArray(o.material) && o.geometry.attributes && o.geometry.attributes.position) pt = o; }); });
+    if (!pt) { _arr.why3 = 'khong thay Points (point cloud) trong scene'; return null; }
+    var P = arrBaseOf(pt, 'traverse'), BG;
+    // BufferGeometry: lớp có method setAttribute riêng
+    var gp = Object.getPrototypeOf(pt.geometry); while (gp && !arrHas(gp, 'setAttribute')) gp = Object.getPrototypeOf(gp); BG = gp && gp.constructor;
+    var M = arrBaseOf(pt.material, 'setValues'), m = pt.material;
+    var mode = m.isShaderMaterial ? (m.isRawShaderMaterial ? 'sm' : 'sm') : (m.isPointsMaterial ? 'pm' : '');
+    if (!P || !BG || !M || !mode) { _arr.why3 = 'khong suy ra duoc lop THREE (P=' + !!P + ' BG=' + !!BG + ' M=' + !!M + ' mode=' + mode + ')'; return null; }
+    return (_arr.T = { mode: mode, P: P, BG: BG, Attr: pt.geometry.attributes.position.constructor, M: M });
+  }
+  function arrMakeMat(T) {
+    var sz = +CFG.arrow3dSize || 3, col = 0xff1f1f;
+    if (T.mode === 'pm') return new T.M({ color: col, size: sz, sizeAttenuation: false, depthTest: false, depthWrite: false, transparent: true });
+    return new T.M({ vertexShader: 'void main(){ gl_PointSize = ' + sz.toFixed(1) + '; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'void main(){ gl_FragColor = vec4(1.0, 0.12, 0.12, 1.0); }', depthTest: false, depthWrite: false, transparent: true });
+  }
+  function arrVisible(o) { for (var x = o; x; x = x.parent) if (x.visible === false) return false; return true; }
+  function arr3dUpdate() {
+    var C = ctx(); if (!C) return;
+    var V = C.V, S = C.S; arrInstall(S);   // cài lại nếu lúc khởi động getProjectCast chưa sẵn sàng
+    var roots = arrRoots(C); if (!roots.length) { _arr.why3 = 'khong tim thay scene'; return; }
+    var T = arrBuildT(roots);
+    if (!T) { if (!_arr.warned.three) { _arr.warned.three = 1; console.warn('[snap] mui ten 3D:', _arr.why3); } return; }
+    var msz = +CFG.arrow3dSize || 3;
+    if (!_arr.geo) {
+      _arr.buf = new Float32Array(ARR_MAXPTS * 3);
+      _arr.geo = new T.BG(); _arr.att = new T.Attr(_arr.buf, 3);
+      _arr.buf = _arr.att.array;   // Float32BufferAttribute SAO CHÉP mảng đầu vào -> phải ghi vào att.array, không phải mảng gốc
+      _arr.geo.setAttribute('position', _arr.att); _arr.geo.setDrawRange(0, 0);
+      _arr.objs = [];
+    }
+    if (!_arr.mat || _arr.msz !== msz) { var old = _arr.mat; _arr.mat = arrMakeMat(T); _arr.msz = msz; (_arr.objs || []).forEach(function (r) { r.obj.material = _arr.mat; }); try { old && old.dispose && old.dispose(); } catch (e) {} }
+    roots.forEach(function (root) {
+      var r = (_arr.objs || []).filter(function (x) { return x.root === root; })[0];
+      if (!r) {
+        var obj = new T.P(_arr.geo, _arr.mat); obj.frustumCulled = false; obj.renderOrder = 9999; obj.userData = { __arrow: true }; obj.raycast = function () {};
+        obj.onBeforeRender = function (rd, sc, cam) { try { this.geometry.setDrawRange(0, (cam && cam.isOrthographicCamera && !CFG.arrowOrtho) ? 0 : _arr.n); } catch (e) {} };   // view ortho (front/side/top): không vẽ -> không tốn GPU
+        r = { root: root, obj: obj }; _arr.objs.push(r);
+      }
+      if (r.obj.parent !== root) root.add(r.obj);
+      r.obj.visible = true;
+    });
+    _arr.why3 = '';
+    var f = curFrame(C), sg = CFG.arrowFlip ? -1 : 1, ext = arrExt(), H = arrHeadSize(), cubes = [], hsh = 0, nowT = Date.now();
+    // danh sách mesh box được cache: chỉ duyệt cả scene khi đổi frame / đổi số con của scene / quá 1 giây (trước đây duyệt mỗi lần -> ~1ms, tối đa 12ms)
+    var rk = f + '|' + roots.map(function (r) { return r.children ? r.children.length : 0; }).join(',');
+    if (!_arr.meshes || rk !== _arr.rk || nowT - _arr.scanAt > 1000) {
+      _arr.meshes = []; _arr.rk = rk; _arr.scanAt = nowT; var seen = {};
+      for (var ri = 0; ri < roots.length && !_arr.meshes.length; ri++) roots[ri].traverse(function (o) {
+        if (_arr.meshes.length >= ARR_CAP || o.isPoints || !o.userData || o.userData.id == null || o.userData.__arrow) return;
+        var id = o.userData.id; if (seen[id]) return;
+        var t = S.instancesTree[id]; if (!t || !t.cubes || !o.matrixWorld) return;
+        var ec0 = effCube(S, id, f); if (!ec0) return;
+        seen[id] = 1; _arr.meshes.push({ o: o, id: id, dz: ec0.cube.dimension.z || 0 });
+      });
+    }
+    var selId = (V.selectedCube && V.selectedCube.userData) ? V.selectedCube.userData.id : null;
+    for (var mi = 0; mi < _arr.meshes.length; mi++) {
+      var mr = _arr.meshes[mi], o2 = mr.o;
+      if (!arrVisible(o2)) continue;
+      if (_ptrDown && mr.id === selId) { var ec2 = effCube(S, mr.id, f); if (ec2) mr.dz = ec2.cube.dimension.z || 0; }   // đang kéo: cập nhật độ dài của box đang chọn
+      var e = o2.matrixWorld.elements, fl = Math.hypot(e[8], e[9], e[10]), rl = Math.hypot(e[0], e[1], e[2]), ul = Math.hypot(e[4], e[5], e[6]);
+      if (!fl || !rl || !ul) continue;
+      var ee = [e[0] / rl, e[1] / rl, e[2] / rl, e[4] / ul, e[5] / ul, e[6] / ul, e[8] / fl * sg, e[9] / fl * sg, e[10] / fl * sg, e[12], e[13], e[14]], L0 = mr.dz / 2 + ext;
+      for (var q = 0; q < 12; q++) hsh = (hsh * 31 + Math.round(ee[q] * 1000)) | 0;
+      hsh = (hsh * 31 + Math.round(L0 * 1000)) | 0;
+      cubes.push({ e: ee, L: L0, mask: o2.layers ? o2.layers.mask : 1 });
+    }
+    var sig = hsh + '|' + cubes.length + '|' + sg + '|' + ext + '|' + H.hl + '|' + H.hw + '|' + roots.length + '|' + msz;
+    var attached = (_arr.objs || []).every(function (r) { return r.obj.parent === r.root; });
+    if (sig === _arr.sig && attached) return;
+    _arr.sig = sig;
+    if (cubes.length) { try { (_arr.objs || []).forEach(function (r) { r.obj.layers.mask = r.obj.layers.mask | cubes[0].mask | 1; }); } catch (e2) {} }   // camera nhìn thấy layer của box thì cũng thấy mũi tên
+    // lượt 2: dựng chấm
+    var B = _arr.buf, n = 0, SS = 0.03, SH = 0.035, TP = Math.PI * 2;
+    var pt3 = function (x, y, z) { if (n < ARR_MAXPTS) { B[n * 3] = x; B[n * 3 + 1] = y; B[n * 3 + 2] = z; n++; } };
+    for (var ci = 0; ci < cubes.length && n < ARR_MAXPTS - 2500; ci++) {
+      var cb = cubes[ci], e = cb.e, L = cb.L, rx = e[0], ry = e[1], rz = e[2], ux = e[3], uy = e[4], uz = e[5], fx = e[6], fy = e[7], fz = e[8], ox = e[9], oy = e[10], oz = e[11];
+      var bl = Math.max(0, L - H.hl), i, j2, m = Math.max(1, Math.ceil(bl / SS));      // thân mảnh: từ tâm box tới đáy nón
+      for (i = 0; i <= m; i++) { var q2 = bl * i / m; pt3(ox + fx * q2, oy + fy * q2, oz + fz * q2); }
+      var nr = Math.max(4, Math.ceil(H.hl / SH));                                      // đầu nón đặc: các vòng chấm thu nhỏ dần về đỉnh
+      for (i = 0; i <= nr; i++) {
+        var tt = i / nr, d = bl + (L - bl) * tt, rad = H.hw * (1 - tt), cx = ox + fx * d, cy = oy + fy * d, cz = oz + fz * d;
+        var cnt = Math.max(1, Math.ceil(TP * rad / SH));
+        for (j2 = 0; j2 < cnt; j2++) { var an = TP * j2 / cnt, ca = Math.cos(an) * rad, sa = Math.sin(an) * rad; pt3(cx + rx * ca + ux * sa, cy + ry * ca + uy * sa, cz + rz * ca + uz * sa); }
+      }
+    }
+    var k = cubes.length;
+    _arr.n = n; _arr.geo.setDrawRange(0, n);
+    if (n > 0) {   // chỉ đẩy phần buffer đã dùng xuống GPU (trước đây đẩy cả 1.8MB mỗi lần)
+      var at = _arr.att;
+      if (typeof at.addUpdateRange === 'function') { try { at.clearUpdateRanges(); at.addUpdateRange(0, n * 3); } catch (e3) {} }
+      else if (at.updateRange) { at.updateRange.offset = 0; at.updateRange.count = n * 3; }
+      at.needsUpdate = true;
+    }
+    _arr.st.arrows3d = k; _arr.st.pts3d = n;
+  }
+  function arrLoop() {
+    _arr.raf = 0; if (!CFG.showArrows) return;
+    var ck = arrExt() + '|' + (+CFG.arrowHead || 1) + '|' + (CFG.arrowFlip ? 1 : 0); if (ck !== _arr.cfgKey) { _arr.cfgKey = ck; _arr.ver++; _arr.cache.clear(); }
+    var now = performance.now();
+    var moving = !_ptrDown && (Date.now() - _moveAt < 250);   // đang rê chuột: bỏ qua nhịp này (mũi tên cập nhật ngay khi chuột dừng)
+    if (!document.hidden && !moving && now - _arr.last >= (_ptrDown ? 33 : 150)) { _arr.last = now; try { arr3dUpdate(); } catch (e) { if (!_arr.warned.e3) { _arr.warned.e3 = 1; console.warn('[snap] mui ten 3D', e); } } }
+    _arr.raf = requestAnimationFrame(arrLoop);
+  }
+  function arrHide3D() { try { (_arr.objs || []).forEach(function (r) { r.obj.visible = false; if (r.obj.parent) r.obj.parent.remove(r.obj); }); } catch (e) {} }
+  function arrApply() {
+    var C = ctx(); if (!C) return; _arr.ver++;
+    if (CFG.showArrows) { arrInstall(C.S); if (!_arr.raf) _arr.raf = requestAnimationFrame(arrLoop); }
+    else { arrHide3D(); }
+    try { _emit(C.S); } catch (e) {}   // ép nền tảng vẽ lại ảnh 2D để mũi tên hiện/mất ngay
+  }
+  function toggleArrows() {
+    CFG.showArrows = !CFG.showArrows; var sv = cfgSave(); arrApply();
+    toast('Mũi tên hướng: ' + (CFG.showArrows ? 'BẬT' : 'TẮT') + (sv ? '' : ' (chưa lưu được)'), 1200);
+  }
+  arr3dUpdate = costWrap('arrow3dUpdate', arr3dUpdate); arrDraw2D = costWrap('arrow2dDraw', arrDraw2D); arrPts2D = costWrap('arrow2dProject', arrPts2D); recolorNow = costWrap('recolorNow', recolorNow);
+  var _safeSaved = null;
+  /* Kiểm tra A/B: __snapSafe() tắt mũi tên + tô màu điểm + tạm dừng định kỳ; __snapSafe(false) trả lại như cũ */
+  window.__snapSafe = function (on) {
+    if (on !== false) {
+      if (_safeSaved) return console.log('[snap] safe-mode đang BẬT rồi');
+      _safeSaved = { showArrows: CFG.showArrows, recolorBox: CFG.recolorBox, pauseWhileDragging: CFG.pauseWhileDragging };
+      CFG.showArrows = false; CFG.recolorBox = false; CFG.pauseWhileDragging = false; arrApply();
+      console.log('[snap] SAFE-MODE BAT: da tat mui ten, to mau diem, tam dung dinh ky. Thu lai thao tac; __snapSafe(false) de tra lai.');
+    } else if (_safeSaved) {
+      CFG.showArrows = _safeSaved.showArrows; CFG.recolorBox = _safeSaved.recolorBox; CFG.pauseWhileDragging = _safeSaved.pauseWhileDragging; _safeSaved = null; arrApply();
+      console.log('[snap] SAFE-MODE TAT: da tra lai cau hinh');
+    }
+  };
+  window.__toggleArrows = toggleArrows;
+  window.__snapArrowProbe = function () {
+    var C = ctx(), out = { on: !!CFG.showArrows, ok2d: _arr.ok2d, stats: _arr.st, wrapped: !!(C && C.S.getProjectCast && C.S.getProjectCast.__arr), three: !!_arr.T, mode3d: _arr.T && _arr.T.mode, why3: _arr.why3, scenes: (_arr.objs || []).length, inScene: (_arr.objs || []).filter(function (r) { return r.obj.parent; }).length };
+    console.log('[snap] arrow probe', out); return out;
+  };
+
+/* ============================================================
+ * @MODULE[core:profile]  ĐO HÀM NỀN TẢNG NÀO ĂN THỜI GIAN (lõi, chỉ chạy khi gọi)
+ * Dùng: __snapProfile(10) rồi rê chuột nhanh giữa front/top/side trong 10 giây -> in bảng top hàm tốn thời gian,
+ * số frame >50ms, số long task. Không chạy nếu không gọi; tự gỡ sau khi đo.
+ * ============================================================ */
+  window.__snapProfile = function (sec) {
+    sec = Math.max(3, Math.min(60, +sec || 10));
+    var C = ctx(); if (!C) return console.log('[snap] chua co ctx');
+    var TRACE = /^(initView|setRefreshCounter|updateHighlightPoints|updateHighlightPointsDebounce|setSelectedShape|updateMultiview|emitViewRefresh|updateCubeMatrix|changePointCloudColor|setColorMode|calcPointCount|putCast|deleteCast|updateCast|projectCube|getProjectCast)$/;
+    var stats = {}, undo = [], chain = [], origins = {}, skip = /^(constructor|render|setState|forceUpdate|componentDid|componentWill|getSnapshot|shouldComponentUpdate|UNSAFE_|isReactComponent|isPureReactComponent|toString|valueOf|hasOwnProperty)/;
+    function frames(stack, n) {   // n khung gọi thật (bỏ wrapper của công cụ đo); [TOOL] = code của userscript này
+      return String(stack).split('\n').slice(1).filter(function (l) { return l.indexOf('__snapProfW') < 0; }).slice(0, n).map(function (l) {
+        var t = l.trim(), fn = t.replace(/^at\s+/, '').split(' ')[0] || '?'; return (/userscript|ConeChut/i.test(t) ? '[TOOL]' : '') + fn;
+      }).join(' < ');
+    }
+    function wrapAll(obj, label) {
+      if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return;
+      var seen = {};
+      for (var o = obj; o && o !== Object.prototype && o !== Function.prototype; o = Object.getPrototypeOf(o)) {
+        Object.getOwnPropertyNames(o).forEach(function (k) {
+          if (seen[k] || skip.test(k)) return; seen[k] = 1;
+          var d; try { d = Object.getOwnPropertyDescriptor(o, k); } catch (e) { return; }
+          if (!d || typeof d.value !== 'function' || d.value.__prof) return;
+          var orig = d.value, name = label + '.' + k, had = Object.prototype.hasOwnProperty.call(obj, k), prevOwn = had ? obj[k] : undefined, tr = TRACE.test(k);
+          var w = function __snapProfW() {
+            var t0 = performance.now(), who = '', outer = chain.length === 0;
+            if (tr || outer) { try {
+              var fr = outer ? '(goc) ' + frames(new Error().stack, 3) : chain.slice(-5).join(' > ');
+              if (outer) { var ok = name + ' <- ' + fr; origins[ok] = (origins[ok] || 0) + 1; }
+              if (tr) who = fr;
+            } catch (e) {} }
+            chain.push(name);
+            try { return orig.apply(this, arguments); }
+            finally { chain.pop(); var dt = performance.now() - t0, st = stats[name] || (stats[name] = { n: 0, ms: 0, max: 0, who: {} }); st.n++; st.ms += dt; if (dt > st.max) st.max = dt; if (who) st.who[who] = (st.who[who] || 0) + 1; }
+          };
+          w.__prof = true;
+          try { obj[k] = w; undo.push(function () { if (had) obj[k] = prevOwn; else delete obj[k]; }); } catch (e) {}
+        });
+      }
+    }
+    wrapAll(C.V, 'V'); wrapAll(C.S, 'S'); if (C.L && typeof C.L === 'object') wrapAll(C.L, 'L');
+    var frames_ = 0, slow = 0, worst = 0, last = performance.now(), run = true, longs = [], po = null;
+    (function tick() { if (!run) return; var n = performance.now(), dt = n - last; last = n; frames_++; if (dt > 50) { slow++; if (dt > worst) worst = dt; } requestAnimationFrame(tick); })();
+    try { po = new PerformanceObserver(function (l) { l.getEntries().forEach(function (e) { longs.push(e.duration); }); }); po.observe({ entryTypes: ['longtask'] }); } catch (e) {}
+    console.log('[snap] DANG DO ' + sec + 's: hay re chuot NHANH giua front/top/side va bam A/W/S/D nhu luc bi khung...');
+    setTimeout(function () {
+      run = false; try { po && po.disconnect(); } catch (e) {} undo.forEach(function (f) { try { f(); } catch (e) {} });
+      var rows = Object.keys(stats).map(function (k) { var s2 = stats[k]; return { ham: k, goi: s2.n, tongMs: +s2.ms.toFixed(1), tbMs: +(s2.ms / s2.n).toFixed(2), maxMs: +s2.max.toFixed(1) }; }).sort(function (a, b) { return b.tongMs - a.tongMs; }).slice(0, 15);
+      console.log('[snap] KET QUA DO: ' + frames_ + ' frame, ' + slow + ' frame >50ms (te nhat ' + worst.toFixed(0) + 'ms), ' + longs.length + ' long-task (tong ' + longs.reduce(function (a, b) { return a + b; }, 0).toFixed(0) + 'ms)');
+      if (console.table) console.table(rows); else console.log(rows);
+      console.log('[snap] CHUOI GOI LONG NHAU cua ham nghi van (tu ngoai vao trong):');
+      Object.keys(stats).filter(function (k) { return TRACE.test(k.split('.')[1] || ''); }).sort(function (a, b) { return stats[b].n - stats[a].n; }).slice(0, 8).forEach(function (k) {
+        var w = stats[k].who, top = Object.keys(w).sort(function (a, b) { return w[b] - w[a]; }).slice(0, 2);
+        if (top.length) console.log('   ' + k + ' (' + stats[k].n + ' lan) <- ' + top.map(function (x) { return w[x] + 'x [' + x + ']'; }).join('   |   '));
+      });
+      console.log('[snap] DIEM BAT DAU cac chuoi (ai goi ham do dau tien; [TOOL] = code cua script nay):');
+      Object.keys(origins).sort(function (a, b) { return origins[b] - origins[a]; }).slice(0, 12).forEach(function (k) { console.log('   ' + origins[k] + 'x  ' + k); });
+      console.log('[snap] hoc: __toiUu ' + (window.__toiUu ? 'CO' : 'KHONG') + ' | fpsMode=' + CFG.fpsMode + ' | showArrows=' + CFG.showArrows + ' | recolorBox=' + CFG.recolorBox + '');
+    }, sec * 1000);
   };
 
 /* ============================================================
@@ -4988,6 +5435,21 @@
     } catch (x) {}
     return '';
   }
+  /* Nếu có lớp phủ nằm trên view (phần tử dưới con trỏ không nằm trong #frontview/#topview/#sideview) thì dùng vị trí con trỏ so với khung của từng view */
+  function axisViewAt(x, y, el) {
+    var v = axisViewOf(el); if (v) return v;
+    var L = [['front', '#frontview'], ['top', '#topview'], ['side', '#sideview']];
+    for (var i = 0; i < L.length; i++) {
+      try { var h = document.querySelector(L[i][1]); if (!h) continue; var r = h.getBoundingClientRect(); if (r.width > 2 && r.height > 2 && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return L[i][0]; } catch (e) {}
+    }
+    return '';
+  }
+  function axisVState() {   // các thuộc tính trong window.view đang giữ giá trị front/top/side (nền tảng nhớ view nào)
+    var vs = {};
+    try { var VV = window.view; Object.keys(VV).forEach(function (k) { var q = VV[k]; if (typeof q === 'string' && /^(front|top|side)/i.test(q)) vs[k] = q; else if (q && typeof q === 'object' && !q.nodeType && !Array.isArray(q) && Object.keys(q).length < 40) Object.keys(q).forEach(function (k2) { var w; try { w = q[k2]; } catch (e5) { return; } if (typeof w === 'string' && /^(front|top|side)/i.test(w)) vs[k + '.' + k2] = w; }); }); } catch (e4) {}
+    return vs;
+  }
+  window.__snapAxisDebug = function (on) { window.__axisDbg = on !== false; console.log('[snap] axis debug', window.__axisDbg ? 'BAT: bam phim trong 1 view roi xem Console' : 'TAT'); };
   function deepElAt(x, y) {
     var el = document.elementFromPoint(x, y);
     for (var n = 0; el && el.shadowRoot && n < 6; n++) { var e2 = el.shadowRoot.elementFromPoint(x, y); if (!e2 || e2 === el) break; el = e2; }
@@ -5000,27 +5462,87 @@
       var o = (typeof _ly !== 'undefined') ? _ly : null;
       if (!o) return '';
       if (o.mx == null) return o.mv || '';
-      var v = axisViewOf(deepElAt(o.mx, o.my));
+      var el = deepElAt(o.mx, o.my), v = axisViewAt(o.mx, o.my, el);
+      if (window.__axisDbg) {
+        var chain = [], x = el; for (var k = 0; x && k < 6; k++, x = x.parentElement) chain.push((x.tagName || '').toLowerCase() + (x.id ? '#' + x.id : '') + (x.className && typeof x.className === 'string' ? '.' + x.className.trim().split(/\s+/).slice(0, 2).join('.') : ''));
+        var rc = {}; [['front', '#frontview'], ['top', '#topview'], ['side', '#sideview']].forEach(function (a) { var h = document.querySelector(a[1]); if (h) { var r = h.getBoundingClientRect(); rc[a[0]] = [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)]; } });
+        var vs = axisVState();
+        console.log('[snap] axis view=' + (v || '(khong ro)'), 'V-nho-view=' + JSON.stringify(vs), 'axisLock=' + CFG.axisLock, 'map=' + JSON.stringify(CFG.axisLockViews), 'chuot=', o.mx, o.my, 'DOM=', chain.join(' < '), 'khung view=', JSON.stringify(rc));
+      }
       o.mv = v; return v;
     } catch (x) {}
     return '';
   }
-  /* Làm mới trạng thái hover của nền tảng sau khi bố cục đổi (Tab, phóng/thu ô): gửi 1 mousemove tại vị trí con trỏ. */
-  var _prT = 0;
-  function pointerRefresh() {
-    _prT = 0;
+  /* (đã bỏ pointerRefresh: không gửi mousemove giả vào nền tảng nữa – dễ làm con trỏ nhảy / nhầm view; việc làm mới hover sau Tab do lyTab gốc đảm nhiệm) */
+  function pointerRefresh() {}
+  function pointerRefreshSoon() {}
+  /* Đồng bộ hover của nền tảng với view THẬT dưới con trỏ, đúng lúc bấm phím A/W/S/D/Q/E.
+     Lỗi gốc: chuyển nhanh front<->top<->side rồi bấm phím thì nền tảng còn nhớ view cũ (trạng thái hover cập nhật trễ);
+     rê chuột sang view khác mới hết. Ở đây, nếu chuột đã nhúc nhích kể từ lần đồng bộ trước, gửi đúng chuỗi sự kiện
+     out/over/move vào phần tử dưới con trỏ TRƯỚC khi phím tới nền tảng. Chỉ chạy 1 lần cho mỗi lần chuột di chuyển. */
+  var _hv = { seq: 0, synced: -1, lastEl: null, moveAt: 0, settleT: 0, settledView: '', tgt: null, crossed: false };
+  /* Chuột vừa chuyển nhanh qua view khác rồi DỪNG: sau ~90ms đồng bộ hover của nền tảng với view thật (không cần chờ bấm phím) */
+  function hoverSettleArm() { _hv.moveAt = performance.now(); if (!_hv.settleT && CFG.hoverSyncKeys) _hv.settleT = setTimeout(hoverSettle, 90); }
+  function hoverSettle() {
+    _hv.settleT = 0;
+    if (performance.now() - _hv.moveAt < 80) { _hv.settleT = setTimeout(hoverSettle, 90); return; }
     try {
-      var o = (typeof _ly !== 'undefined') ? _ly : null;
-      if (!o || o.mx == null || o.ed || _ptrDown) return;
-      var el = deepElAt(o.mx, o.my); if (!el) return;
-      o.mv = axisViewOf(el);
-      var d = { bubbles: true, cancelable: true, composed: true, clientX: o.mx, clientY: o.my, screenX: o.mx, screenY: o.my, view: window, buttons: 0 };
-      try { el.dispatchEvent(new PointerEvent('pointermove', Object.assign({ pointerId: 1, pointerType: 'mouse', isPrimary: true }, d))); } catch (e1) {}
-      el.dispatchEvent(new MouseEvent('mousemove', d));
+      var o = (typeof _ly !== 'undefined') ? _ly : null; if (!o || o.mx == null || _ptrDown || o.ed) return;
+      var el = deepElAt(o.mx, o.my), v = el ? axisViewAt(o.mx, o.my, el) : '';
+      if (v && (v !== _hv.settledView || _hv.crossed)) { hoverSync(); if (window.__axisDbg) console.log('[snap] settle-sync -> view=' + v + (_hv.crossed ? ' (chuot da doi phan tu khi re)' : '')); }
+      _hv.crossed = false; _hv.settledView = v;
     } catch (e) {}
   }
-  function pointerRefreshSoon(ms) { if (_prT) clearTimeout(_prT); _prT = setTimeout(pointerRefresh, ms == null ? 60 : ms); }
-  var _axSign = (function () { try { return JSON.parse(localStorage.getItem('__snapAxisSign') || '{}') || {}; } catch (e) { return {}; } })();
+  function hoverFire(el, type, base, rel) {
+    var Ev = (type.indexOf('pointer') === 0 && window.PointerEvent) ? PointerEvent : MouseEvent, o = {};
+    for (var k in base) o[k] = base[k];
+    o.relatedTarget = rel || null;
+    if (Ev === PointerEvent) { o.pointerId = 1; o.pointerType = 'mouse'; o.isPrimary = true; }
+    var ev = new Ev(type, o); ev.__snapSynth = true; el.dispatchEvent(ev);
+  }
+  /* Mô phỏng ĐẦY ĐỦ việc chuột rời các view cũ và vào view hiện tại. React chỉ đổi onMouseEnter/onMouseLeave khi nhận mouseout (có relatedTarget)
+     trên phần tử CŨ; mouseover vào phần tử mới một mình không đủ -> khung xanh "view đang hoạt động" của nền tảng bị kẹt ở view cũ. */
+  function hoverSync() {
+    var o = (typeof _ly !== 'undefined') ? _ly : null;
+    if (!o || o.mx == null || o.ed) return;
+    var el = deepElAt(o.mx, o.my); if (!el) return;
+    if (el.getRootNode && el.getRootNode() !== document) return;   // phần tử trong shadow DOM (bảng của tool) -> bỏ qua
+    var base = { bubbles: true, cancelable: true, composed: true, clientX: o.mx, clientY: o.my, screenX: o.mx, screenY: o.my, view: window, buttons: 0 };
+    var nb = {}; for (var k in base) nb[k] = base[k]; nb.bubbles = false; nb.cancelable = false;   // mouseenter/mouseleave không nổi bọt
+    var view = axisViewAt(o.mx, o.my, el), cur = null, others = [];
+    if (view) {
+      try {
+        cur = document.querySelector('#' + view + 'view');
+        ['front', 'top', 'side'].forEach(function (v) { if (v !== view) { var h = document.querySelector('#' + v + 'view'); if (h) others.push(h); } });
+      } catch (e) { cur = null; }
+    }
+    if (cur && others.length) {
+      var rel = others[0].querySelector('canvas') || others[0];
+      others.forEach(function (h) {   // RỜI các view khác (cả sự kiện nổi bọt cho React lẫn sự kiện gốc cho listener native)
+        var from = h.querySelector('canvas') || h;
+        hoverFire(from, 'pointerout', base, el); hoverFire(from, 'mouseout', base, el);
+        hoverFire(h, 'pointerleave', nb, el); hoverFire(h, 'mouseleave', nb, el);
+      });
+      hoverFire(el, 'pointerover', base, rel); hoverFire(el, 'mouseover', base, rel);   // VÀO view hiện tại
+      hoverFire(cur, 'pointerenter', nb, rel); hoverFire(cur, 'mouseenter', nb, rel);
+      if (el !== cur) { hoverFire(el, 'pointerenter', nb, rel); hoverFire(el, 'mouseenter', nb, rel); }
+    } else {
+      var prev = _hv.lastEl && _hv.lastEl.isConnected ? _hv.lastEl : null;
+      if (prev && prev !== el) { hoverFire(prev, 'pointerout', base, el); hoverFire(prev, 'mouseout', base, el); }
+      if (prev !== el) { hoverFire(el, 'pointerover', base, prev); hoverFire(el, 'mouseover', base, prev); }
+    }
+    hoverFire(el, 'pointermove', base, null); hoverFire(el, 'mousemove', base, null);
+    _hv.lastEl = el;
+  }
+  function onHoverKey(e) {
+    if (e.type !== 'keydown' || !CFG.hoverSyncKeys || e.__fineSynth || e.__snapSynth || e.ctrlKey || e.altKey || e.metaKey) return;
+    if ((CFG.fineMoveKeys || []).indexOf(String(e.code)) < 0) return;
+    if (_hv.seq === _hv.synced) return;   // chuột chưa nhúc nhích từ lần đồng bộ trước -> nền tảng đã đúng
+    var t = e.composedPath ? e.composedPath()[0] : e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    _hv.synced = _hv.seq;
+    var vb = window.__axisDbg ? axisVState() : null; try { hoverSync(); if (window.__axisDbg) console.log('[snap] hover-sync key=' + e.code, 'view-that=' + axisViewAt(_ly.mx, _ly.my, _hv.lastEl), 'V-nho-view TRUOC sync=' + JSON.stringify(vb), 'SAU sync=' + JSON.stringify(axisVState()), 'target=' + (_hv.lastEl && _hv.lastEl.tagName)); } catch (x) { console.warn('[snap] hover-sync', x); }
+  }
   function axisLearn(k, sg) { if (_axSign[k] === sg) return; _axSign[k] = sg; try { localStorage.setItem('__snapAxisSign', JSON.stringify(_axSign)); } catch (e) {} }
   function axisLockStep(Rb, Ra, view, code) {
     var aa = axisAngle(mMul(Ra, mT(Rb)));
@@ -5798,11 +6320,11 @@
   /* FPS controls and optional independent 3D redraw loop (ported from TriThucCamLite). */
 
 /* ============================================================
- * @MODULE[alt+u:fps]  MỞ KHOÁ FPS VẼ 3D
- * Phím: alt+u (keyFps)
+ * @MODULE[alt+u:fps]  MỞ KHOÁ FPS VẼ 3D (luôn bật, không có phím/cài đặt)
+ * Cố định: vẽ lại 3D + FPS tối đa theo màn hình + bỏ giới hạn FPS; chỉ còn tuỳ chọn hiện/ẩn đồng hồ (fpsShow)
  * fpsTick, fpsInstall, hookFpsRenderers,
  * fpsReplay, fps3dRun, applyFps,
- * install2dDragBoost, toggleFps
+ * install2dDragBoost
  * ============================================================ */
   var FPSM = { orig: null, origC: null, q: new Map(), seq: 0, timer: 0, last: 0, on: false, draws: 0, frames: 0, el: null, tu: null, rs: [], frameNo: 0, rec: { frame: -1, list: [] }, lastSeq: [], toolDrew: 0, replaying: false, loop3d: false, drag2d: false };
   var NAT_RAF = window.requestAnimationFrame.bind(window);
@@ -5898,23 +6420,50 @@
     })();
   }
   function applyFps() {
-    var mode = CFG.fpsMode || 'off', effectiveMode = FPSM.drag2d ? 'screen' : mode, tu = window.__toiUu && window.__toiUu.opts;
+    CFG.fps3d = true; CFG.fpsTarget = 'screen'; CFG.fpsMode = 'screen';   /* cố định, đè cả giá trị đã lưu từ bản cũ */
+    var mode = 'screen', effectiveMode = (FPSM.drag2d || FPSM.hover) ? 'screen' : mode, tu = window.__toiUu && window.__toiUu.opts;
     if (tu) {
       if (effectiveMode !== 'off') { if (!FPSM.tu) FPSM.tu = { fps: tu.fps, idleFps: tu.idleFps }; tu.fps = 0; tu.idleFps = 0; }
       else if (FPSM.tu) { tu.fps = FPSM.tu.fps; tu.idleFps = FPSM.tu.idleFps; FPSM.tu = null; }
     }
     fpsInstall(effectiveMode === 'unlock');
-    try { if (CFG.fps3d || (CFG.fpsShow && mode !== 'off')) hookFpsRenderers(); } catch (e) {}
-    fps3dRun(!!CFG.fps3d);
-    var showOn = CFG.fpsShow && (CFG.fps3d || (mode && mode !== 'off'));
+    try { hookFpsRenderers(); } catch (e) {}
+    fps3dRun(true);
+    var showOn = !!CFG.fpsShow;
     if (showOn && !FPSM.el && document.body) {
-      FPSM.el = document.createElement('div');
-      FPSM.el.style.cssText = 'position:fixed;left:6px;bottom:6px;z-index:2147483000;background:rgba(0,0,0,.7);color:#7f7;font:12px monospace;padding:3px 6px;border-radius:3px;pointer-events:none'; document.body.appendChild(FPSM.el);
+      var el = FPSM.el = document.createElement('div');
+      el.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:2147483000;display:flex;align-items:center;gap:9px;padding:4px 10px 4px 9px;'
+        + 'background:rgba(20,20,24,.78);border:1px solid rgba(255,255,255,.12);border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35);'
+        + 'font:11px/1 "Segoe UI",system-ui,Arial,sans-serif;color:#a8a8b0;pointer-events:none;user-select:none;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)';
+      var mk = function (tag, css, txt) { var n = document.createElement(tag); n.style.cssText = css; if (txt != null) n.textContent = txt; return n; };
+      var stat = function (label, unit) {
+        var g = mk('span', 'display:flex;align-items:baseline;gap:4px'), v = mk('b', 'font:600 14px/1 Consolas,Menlo,monospace;font-variant-numeric:tabular-nums;min-width:3ch;text-align:right;color:#e8e8ec', '–');
+        g.appendChild(mk('span', 'letter-spacing:.3px', label)); g.appendChild(v); g.appendChild(mk('span', 'font-size:10px;color:#8a8a92', unit));
+        el.appendChild(g); return v;
+      };
+      var dot = FPSM.dot = mk('span', 'width:7px;height:7px;border-radius:50%;background:#6a6a72;flex:0 0 auto');
+      el.appendChild(dot);
+      FPSM.v3 = stat('3D', 'FPS');
+      el.appendChild(mk('span', 'width:1px;height:12px;background:rgba(255,255,255,.18)'));
+      FPSM.vh = stat('Màn hình', 'Hz');
+      document.body.appendChild(el);
       FPSM.iv = setInterval(function () {
         var d = FPSM.draws, f = FPSM.frames; FPSM.draws = 0; FPSM.frames = 0;
-        if (FPSM.el) FPSM.el.textContent = 'Vẽ 3D: ' + d + ' FPS | trình duyệt: ' + f + ' Hz' + (CFG.fpsMode === 'unlock' ? ' | mở khoá ' + CFG.fpsTarget : CFG.fpsMode === 'screen' ? ' | bỏ giới hạn' : '') + (CFG.fps3d ? ' | vẽ 3D mở khoá (' + (CFG.fpsTarget === 'screen' ? 'màn hình' : CFG.fpsTarget) + ')' : '');
+        if (!FPSM.el) return;
+        var r = f > 0 ? d / f : 0, col = r >= 0.9 ? '#4ade80' : r >= 0.6 ? '#facc15' : '#f87171';   /* xanh: 3D theo kịp màn hình · vàng: hụt nhẹ · đỏ: hụt nhiều */
+        FPSM.v3.textContent = d; FPSM.vh.textContent = f; FPSM.v3.style.color = col; FPSM.dot.style.background = col;
       }, 1000);
     } else if (!showOn && FPSM.el) { FPSM.el.remove(); FPSM.el = null; clearInterval(FPSM.iv); }
+  }
+  /* Rê chuột trên view: tạm bỏ giới hạn FPS của __toiUu (nếu có) để nền tảng cập nhật hover kịp, trả lại sau 350ms đứng yên */
+  function installHoverBoost() {
+    if (FPSM.hoverInstalled) return; FPSM.hoverInstalled = true; FPSM.hover = false; FPSM.hoverAt = 0; var t = 0;
+    var chk = function () { t = 0; if (performance.now() - FPSM.hoverAt < 350) { t = setTimeout(chk, 350); return; } FPSM.hover = false; try { applyFps(); } catch (e) {} };
+    window.addEventListener('pointermove', function () {
+      if (!window.__toiUu || CFG.fpsHoverBoost === false) return;
+      FPSM.hoverAt = performance.now();
+      if (!FPSM.hover) { FPSM.hover = true; try { applyFps(); } catch (e) {} t = setTimeout(chk, 350); }
+    }, { capture: true, passive: true });
   }
   function install2dDragBoost() {
     var candidate = null, active = false;
@@ -5943,10 +6492,6 @@
     window.addEventListener('pointercancel', function (e) { if (candidate && candidate.id === e.pointerId) finish(); }, true);
     window.addEventListener('blur', finish, true);
   }
-  function toggleFps() {
-    CFG.fps3d = !CFG.fps3d; var sv = cfgSave(); applyFps();
-    toast('Mở khoá FPS vẽ 3D: ' + (CFG.fps3d ? 'BẬT (' + (CFG.fpsTarget === 'screen' ? 'theo màn hình' : CFG.fpsTarget + ' FPS') + ')' : 'TẮT') + (sv ? ' (đã lưu)' : ''), 2500);
-  }
   window.__snapFps = { apply: applyFps, state: FPSM, replay: fpsReplay };
 
 /* ============================================================
@@ -5957,11 +6502,12 @@
   (function wait(t) {
     if (ctx()) {
       cfgInit();
-      try { applyFps(); install2dDragBoost(); setInterval(function () { if (!uiBusy() && (CFG.fps3d || (CFG.fpsShow && CFG.fpsMode !== 'off'))) hookFpsRenderers(); }, 2000); } catch (e) { console.warn('[snap] FPS', e); }
+      try { arrApply(); } catch (e) { console.warn('[snap] mui ten', e); }
+      try { applyFps(); installHoverBoost(); install2dDragBoost(); setInterval(function () { if (!uiBusy()) hookFpsRenderers(); }, 2000); } catch (e) { console.warn('[snap] FPS', e); }
       var busy = toolBusy;
       var ACTIONS = [
         ['keyMenu', toggleMenu, false, 'menu cài đặt'],
-        ['keyFps', toggleFps, false, 'mở khoá FPS vẽ 3D'],
+        ['keyArrow', toggleArrows, false, 'bật/tắt mũi tên hướng đỏ'],
         ['keyFitHead', function () { tailKey(false, 'head'); }, true, 'khít đầu'],
         ['keyFitTail', function () { tailKey(false, 'rear'); }, true, 'khít đuôi'],
         ['keyFitHeadAll', function () { tailKey(true, 'head'); }, true, 'khít đầu mọi keyframe'],
@@ -6006,6 +6552,13 @@
         var MK = { ctrl: 'control', alt: 'alt', shift: 'shift' };
         if (MK[k.key]) {
           if (String(e.key).toLowerCase() !== MK[k.key]) return false;
+          /* FIX#1: modifier đơn (alt/ctrl/shift) chỉ fire khi nhả MÀ không có modifier nào khác đang giữ,
+             và chỉ trên keyup – tránh kích hoạt 'alt' khi người dùng vừa bấm xong alt+q/alt+s */
+          if (e.type === 'keyup') {
+            if (k.key === 'alt' && (e.ctrlKey || e.shiftKey)) return false;
+            if (k.key === 'ctrl' && (e.altKey || e.shiftKey)) return false;
+            if (k.key === 'shift' && (e.ctrlKey || e.altKey)) return false;
+          }
           return (k.key === 'ctrl' || !!e.ctrlKey === k.ctrl) && (k.key === 'alt' || !!e.altKey === k.alt) && (k.key === 'shift' || !!e.shiftKey === k.shift) && !e.metaKey;
         }
         var code = k.key.length === 1 ? (/[a-z]/.test(k.key) ? 'Key' + k.key.toUpperCase() : /[0-9]/.test(k.key) ? 'Digit' + k.key : '') : k.key;
@@ -6026,6 +6579,8 @@
       };
       window.__snapRebuildKeys();
       var typing = function (e) { var t = e.composedPath ? e.composedPath()[0] : e.target; return t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)); };
+      /* FIX#1 cont: theo dõi xem có combo-key (alt+x) nào vừa được xử lý không → ngăn modifier đơn 'alt' bắn theo */
+      var _lastComboAt = 0;
       var onKey = function (e) {
         if (e.__snapSynth) return;
         if (!_menu) {
@@ -6048,12 +6603,26 @@
         for (var i = 0; i < parsed.length && !hit; i++) if (matchKey(e, parsed[i].k)) hit = parsed[i];
         if (!hit || typing(e)) return;
         if (hit.cond && !hit.cond()) return;
+        /* FIX#1: nếu phím này là modifier đơn (alt/ctrl/shift) trên keyup, và vừa có combo được fire trong 300ms,
+           bỏ qua để tránh alt bắn sau alt+q/alt+s */
+        var isModifierAlone = hit.k && (hit.k.key === 'alt' || hit.k.key === 'ctrl' || hit.k.key === 'shift') &&
+                              !hit.k.alt && !hit.k.ctrl && !hit.k.shift;
+        if (isModifierAlone && e.type === 'keyup' && Date.now() - _lastComboAt < 300) return;
         e.preventDefault(); e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation();
         if (e.type !== 'keydown' || e.repeat || (hit.idle && busy())) return;
+        /* Ghi nhận combo vừa được thực hiện (bất kỳ phím nào có modifier) */
+        if (e.altKey || e.ctrlKey || e.shiftKey) _lastComboAt = Date.now();
         var rr = hit.rec ? recBegin(hit.label) : null;
         try { hit.fn(); } finally { recEnd(rr); }
       };
       ['keydown', 'keyup', 'keypress'].forEach(function (ev) { window.addEventListener(ev, onKey, true); });
+      /* FIX#1: cũng cập nhật _lastComboAt khi attrKeys / remaps combo được fire */
+      window.addEventListener('keydown', function (e) {
+        if (e.__snapSynth || (!e.altKey && !e.ctrlKey && !e.shiftKey)) return;
+        var t = e.composedPath ? e.composedPath()[0] : e.target;
+        if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+        _lastComboAt = Date.now();
+      }, true);
       var mouseHeld = {};
       var mkPseudo = function (e, type) {
         var p = { type: type, code: MOUSE_BTN[e.button], key: MOUSE_BTN[e.button], repeat: false, altKey: e.altKey, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, target: e.target, hit: false,
@@ -6079,12 +6648,13 @@
         }
       };
       ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'auxclick'].forEach(function (ev) { window.addEventListener(ev, onMouseBtn, true); });
+      window.addEventListener('keydown', onHoverKey, true);
       window.addEventListener('keydown', onFineKey, true);
       window.addEventListener('keyup', onFineKey, true);
       window.addEventListener('keydown', onZKey, true);
       window.addEventListener('keydown', onAxisKey, true);
       ['pointermove', 'mousedown'].forEach(function (ev) {
-        window.addEventListener(ev, function (e) { _ly.mx = e.clientX; _ly.my = e.clientY; }, { capture: true, passive: true });
+        window.addEventListener(ev, function (e) { _ly.mx = e.clientX; _ly.my = e.clientY; if (!e.__snapSynth) { _hv.seq++; _hv.lastEl = e.target; if (e.target !== _hv.tgt) { _hv.tgt = e.target; _hv.crossed = true; } hoverSettleArm(); } }, { capture: true, passive: true });
       });
       window.addEventListener('keydown', function (e) {
         if (e.key !== 'Tab' || e.ctrlKey || e.altKey || e.shiftKey || e.metaKey || e.__snapSynth) return;
