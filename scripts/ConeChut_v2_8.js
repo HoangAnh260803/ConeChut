@@ -5987,7 +5987,7 @@
     _cam.full = false; _cam.docked = true;
     var p = { left: b.left + b.width * t.x / 100, top: b.top + b.height * t.y / 100, width: b.width * t.w / 100, height: b.height * t.h / 100 };
     if (same && q && Math.abs(q.left - p.left) < 0.5 && Math.abs(q.top - p.top) < 0.5 && Math.abs(q.width - p.width) < 0.5 && Math.abs(q.height - p.height) < 0.5) return;
-    _cam.pos = p; camLayout(); camFitSoon();
+    _cam.pos = p; camLayout(); if (!_ly.camFitReq) { _ly.camFitReq = requestAnimationFrame(function () { _ly.camFitReq = 0; camFitSoon(); }); }
   }
   function lyTrack() {
     if (!CFG.layoutOn || _ly.sus || document.hidden || uiBusy()) return;
@@ -6012,7 +6012,7 @@
     clearTimeout(_ly.t);
     var fire = function () { try { window.dispatchEvent(new Event('resize')); } catch (e) {} lyDock(!quick); try { apTrack(); } catch (e) {} pointerRefreshSoon(); };
     if (quick) { if (_ly.rzq) return; _ly.rzq = 1; try { fire(); } finally { requestAnimationFrame(function () { _ly.rzq = 0; }); } return; }
-    requestAnimationFrame(fire); _ly.t = setTimeout(fire, 250);
+    _ly.t = setTimeout(fire, 80);
   }
   function lyApply(quick) {
     quick = quick === true;
@@ -6308,7 +6308,7 @@
       lyTag(true); if (!document.getElementById(LY_ID)) lyApply();
     }, 1000);
     setInterval(function () { if (CFG.layoutOn && !_ly.sus && !document.hidden && !uiBusy() && lyGrid()) lyTag(); }, 5000);
-    setInterval(lyTrack, 200);
+    setInterval(lyTrack, 350);
     var scrRaf = 0;
     window.addEventListener('scroll', function () { if (scrRaf) return; scrRaf = requestAnimationFrame(function () { scrRaf = 0; lyTrack(); }); }, true);
     window.addEventListener('resize', function () {
