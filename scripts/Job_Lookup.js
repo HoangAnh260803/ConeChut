@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Job Lookup
 // @namespace    bpo-job-lookup
-// @version      2.3
-// @description  Tra cứu job/tài khoản/cuboid — chỉ chạy trên nền tảng Appen (global-autolabeling-service.evad.xiaomi.srv), gọi API trực tiếp (không thao tác giao diện)
+// @version      2.4
+// @description  Tra cứu job/tài khoản/cuboid — chỉ chạy trên nền tảng Appen (global-autolabeling-service.evad.xiaomi.srv), giao diện chỉ hiện ở trang BPO Job List
 // @match        *://global-autolabeling-service.evad.xiaomi.srv/*
 // @run-at       document-start
 // @grant        GM_getValue
@@ -17,6 +17,8 @@
   var MAIN_HOST = 'global-autolabeling-service.evad.xiaomi.srv';
   var ON_MAIN = location.host === MAIN_HOST;
   if (!ON_MAIN) return; // chỉ dùng trong nền tảng Appen
+  // Chỉ hiện giao diện ở trang BPO Job List: .../appen/ui#/bpo-jobs
+  function onJobList() { return /^#\/bpo-jobs(?:[/?]|$)/.test(location.hash); }
 
   /* ===== CẤU HÌNH (chỉnh nếu response của hệ thống khác) ===== */
   var CFG = {
@@ -885,7 +887,13 @@
     qi.addEventListener('keydown', function (e) { if (e.key === 'Enter') run(); });
     $('#bpl-t').onclick = function () { panel.classList.toggle('min'); };
     $('#bpl-title').onclick = function () { panel.classList.toggle('min'); };
-    function toggleTool() { host.style.display = host.style.display === 'none' ? 'block' : 'none'; }
+    // Chỉ hiện giao diện ở trang BPO Job List; phím 1 / Alt+B chỉ bật/tắt khi đang ở trang này
+    var manualHide = false;
+    function sync() { host.style.display = (onJobList() && !manualHide) ? 'block' : 'none'; }
+    function toggleTool() { if (!onJobList()) return; manualHide = !manualHide; sync(); }
+    sync();
+    window.addEventListener('hashchange', sync);
+    setInterval(sync, 700); // dự phòng nếu SPA đổi route mà không bắn hashchange
     document.addEventListener('keydown', function (e) {
       if (e.altKey && (e.key === 'b' || e.key === 'B')) { toggleTool(); return; } // Alt+B: ẩn/hiện
       if (e.key !== '1' || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey || e.repeat) return;
