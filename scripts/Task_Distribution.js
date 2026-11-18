@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Task distribution
 // @namespace    https://tampermonkey.net/
-// @version      2.5
+// @version      2.6
 // @description
 // @match        http://global-autolabeling-service.evad.xiaomi.srv/appen/ui*
 // @require      https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js
@@ -716,9 +716,10 @@
 
   const listRows = () => [...allRows.values()].sort((a, b) => a.page - b.page || a.idx - b.idx);
   // Ô tìm ID: khớp một phần; dán nhiều ID (cách nhau bởi dấu cách / , / ;) thì khớp bất kỳ ID nào
+  // Chỉ hiển thị các dòng có tên worker (không hiển thị dòng trống)
   function filteredRows() {
     const toks = searchQ.split(/[\s,;]+/).map(norm).filter(Boolean);
-    const rows = listRows();
+    const rows = listRows().filter((r) => r.worker && r.worker.trim());
     return toks.length ? rows.filter((r) => toks.some((t) => norm(r.id).includes(t))) : rows;
   }
 
@@ -1085,8 +1086,10 @@
   }
 
   // Danh sách "59: nguyenhoanganh -> [chọn QC]" cho các ID khớp ô tìm kiếm (mọi trang)
+  // Chỉ hiển thị dòng có tên worker; dòng trống không hiện lên bảng
   function renderList() {
-    const total = allRows.size;
+    const totalAll = allRows.size;
+    const withWorker = listRows().filter((r) => r.worker && r.worker.trim());
     const rows = filteredRows();
     const searching = !!searchQ.trim();
     const pages = new Set(listRows().map((r) => r.page)).size;
@@ -1096,7 +1099,8 @@
     const list = $2('d-list');
     list.textContent = '';
     if (!workers.length) list.appendChild(hint('Chưa có Excel: vẫn gõ tay được, upload Excel để có gợi ý tên.'));
-    if (!total) list.appendChild(hint('Không có dòng nào trên bảng.'));
+    if (!totalAll) list.appendChild(hint('Không có dòng nào trên bảng.'));
+    else if (!withWorker.length) list.appendChild(hint('Không có dòng nào có tên tài khoản.'));
     else if (!rows.length) list.appendChild(hint('Không có ID nào khớp.'));
     rows.forEach((r) => {
       const line = document.createElement('div');
@@ -1118,7 +1122,8 @@
       line.append(label, inp);
       list.appendChild(line);
     });
-    setStat(total ? (searching ? `${rows.length}/${total} ID khớp` : `${total} ID`) + ` · ${pages} trang` : '');
+    const displayTotal = withWorker.length;
+    setStat(totalAll ? (searching ? `${rows.length}/${displayTotal} ID khớp` : `${displayTotal} ID có tài khoản`) + ` · ${pages} trang` : '');
     updateRunLabel();
   }
 
