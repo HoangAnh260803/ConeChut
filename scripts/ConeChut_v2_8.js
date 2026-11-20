@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         ConeChut_v2.8.22
+// @name         ConeChut_v2.8.23
 // @namespace    local
-// @version      2.8.22
+// @version      2.8.23
 // @description  no
 // @match        *://global-autolabeling-service.evad.xiaomi.srv/appen/mashup/ssr/tools/lidar.html*
 // @run-at       document-idle
@@ -26,7 +26,7 @@
  *  @MODULE[alt+s]          Menu cài đặt, bảng phím tắt, bảng gán thuộc tính nhanh
  *  @MODULE[alt+g]          Kéo đầu xe vào thân / xe sau theo xe trước (alt+g, shift+alt+g, shift+g, ctrl+shift+g)
  *  @MODULE[core:yaw]       Lõi: căn hướng (yaw/heading)
- *  @MODULE[7]              FOCUS 7 camera
+ *  @MODULE[7]              FOCUS 7 camera  (FIX#6: cap nhat cam ngay khi keo box 3D – khong delay)
  *  @MODULE[8]              Bảng thuộc tính
  *  @MODULE[6]              Đổi class (6, arrowup, arrowdown)
  *  @MODULE[ctrl+drag]      Ctrl + kéo khít
@@ -1858,7 +1858,13 @@
   var _cam = null, _bmCache = {};
   var _camDim = {};   /* FIX#5: nhớ kích thước ảnh từng camera -> chỉ tải ảnh của cam THẤY box (không tải đủ 7 cam mỗi lần đổi frame) */
   /* ---- FIX#5: bắt đổi frame/đổi box NGAY (mỗi khung hình ~16ms) thay vì chờ polling 350-400ms + bị uiBusy chặn ---- */
-  var _fw = { raf: 0, f: NaN, id: undefined, nullAt: 0, camAt: 0, camT: 0 };
+  /* ---- FIX#6: theo dõi sig (vị trí/xoay/kích thước box) trong fwTick -> cập nhật cam NGAY khi kéo box 3D ---- */
+  var _fw = { raf: 0, f: NaN, id: undefined, nullAt: 0, camAt: 0, camT: 0, sig: null };
+  function fwSigEq(a, b) {
+    if (!a || !b) return a === b;
+    for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
   function fwTick() {
     _fw.raf = 0;
     if (!_cam && !_ap) return;                         /* không còn panel nào -> dừng vòng lặp */
@@ -1871,23 +1877,47 @@
       if (now - _fw.nullAt < 150) return;
     }
     _fw.nullAt = 0;
-    if (f === _fw.f && id === _fw.id) return;
+    /* FIX#6: so sánh thêm sig -> phát hiện kéo box (cùng frame, cùng id nhưng vị trí thay đổi) */
+    var sig = _cam ? camSigOf(C) : null;
+    var sigChanged = _cam && !fwSigEq(sig, _fw.sig);
+    if (f === _fw.f && id === _fw.id && !sigChanged) return;
     _fw.f = f; _fw.id = id;
-    if (_ap) { try { apRender(false); } catch (e) { console.warn('[snap] fw attr', e); } }
-    if (_cam) fwCam();
+    if (sigChanged) _fw.sig = sig;
+    if (_ap && (f !== _fw.f || id !== _fw.id)) { try { apRender(false); } catch (e) { console.warn('[snap] fw attr', e); } }
+    if (_cam) fwCam(sigChanged);
   }
-  function fwCam() {
+  function fwCam(isDrag) {
+    /* FIX#6: khi đang kéo box (isDrag=true) bỏ qua throttle 70ms -> render ngay để bắt kịp chuột */
+    if (isDrag) { if (_fw.camT) { clearTimeout(_fw.camT); _fw.camT = 0; } fwCamNow(true); return; }
     var gap = 70 - (performance.now() - _fw.camAt);    /* kéo thanh frame liên tục: giới hạn ~14 lần/giây, lần cuối luôn được vẽ */
-    if (gap > 0) { if (!_fw.camT) _fw.camT = setTimeout(function () { _fw.camT = 0; fwCamNow(); }, gap); return; }
-    fwCamNow();
+    if (gap > 0) { if (!_fw.camT) _fw.camT = setTimeout(function () { _fw.camT = 0; fwCamNow(false); }, gap); return; }
+    fwCamNow(false);
   }
-  function fwCamNow() {
+  function fwCamNow(isDrag) {
     if (!_cam || camHidden()) return;
     var C = ctx(); if (!C) return;
     _fw.camAt = performance.now();
     if (selectedId(C) !== _cam.id) _cam.zoom = null;
-    _cam.sig = camSigOf(C);
-    camRender();
+    var sig = camSigOf(C);
+    /* FIX#6: khi kéo box, chỉ cập nhật cast+vẽ lại (ảnh đã có trong cache), không reload ảnh từ network */
+    _fw.sig = sig; _cam.sig = sig;
+    if (isDrag && _cam.items && _cam.items.length && _cam.id === selectedId(C) && _cam.frame === curFrame(C)) {
+      camDrawDrag(C);
+    } else {
+      camRender();
+    }
+  }
+  /* FIX#6: vẽ lại nhanh khi kéo – chỉ tính lại cast rồi drawCell, không Promise/không reload ảnh */
+  function camDrawDrag(C) {
+    if (!_cam || !_cam.items || !_cam.grid) return;
+    var S = C.S, id = _cam.id, f = _cam.frame;
+    _cam.items.forEach(function (o, i) {
+      var cell = _cam.grid.children[i]; if (!cell) return;
+      var cv = cell.querySelector('canvas'); if (!cv || !o.img) return;
+      var cast = projectCast(S, id, f, o.k);
+      if (cast) o.cast = cast;
+      drawCell(cv, o.img, o.cast, _cam.zoom != null);
+    });
   }
   function fwEnsure() {
     if (_fw.raf) return;
@@ -2191,11 +2221,16 @@
     if (window.ResizeObserver) { _cam.ro = new ResizeObserver(camFitSoon); _cam.ro.observe(_cam.grid); }
     camLayout(); setTimeout(camRender, 30); fwEnsure();
     _cam.timer = setInterval(function () {
-      /* FIX#3: 350ms thay 200ms; bỏ qua khi _ptrDown để tránh lag khi kéo box */
-      var C2 = ctx(); if (!_cam || !C2 || document.hidden || uiBusy() || camHidden() || _ptrDown) return;
+      /* FIX#3: 350ms thay 200ms; FIX#6: không chặn _ptrDown nữa – fwTick đã xử lý kéo box;
+         interval này chỉ là lớp backup cho các trường hợp fwTick miss (tab ẩn rồi hiện lại, v.v.) */
+      var C2 = ctx(); if (!_cam || !C2 || document.hidden || camHidden()) return;
+      /* Khi đang kéo (uiBusy/_ptrDown): chỉ chạy nếu sig thực sự thay đổi và fwTick có vẻ chưa xử lý */
       var id = selectedId(C2), f = curFrame(C2), sig = camSigOf(C2);
-      var same = sig === _cam.sig || (sig && _cam.sig && sig.every(function (v, i) { return v === _cam.sig[i]; }));
-      if (f !== _cam.frame || id !== _cam.id || !same) { _cam.sig = sig; if (id !== _cam.id) _cam.zoom = null; camRender(); }
+      var same = fwSigEq(sig, _cam.sig);
+      if (f === _cam.frame && id === _cam.id && same) return;
+      /* Nếu đang kéo box và sig đã được fwTick cập nhật (trùng _fw.sig) -> bỏ qua tránh double render */
+      if (_ptrDown && fwSigEq(sig, _fw.sig) && f === _fw.f && id === _fw.id) return;
+      _cam.sig = sig; if (id !== _cam.id) _cam.zoom = null; camRender();
     }, 350);
   }
   window.__toggleCams = toggleCams;
@@ -5987,7 +6022,7 @@
     _cam.full = false; _cam.docked = true;
     var p = { left: b.left + b.width * t.x / 100, top: b.top + b.height * t.y / 100, width: b.width * t.w / 100, height: b.height * t.h / 100 };
     if (same && q && Math.abs(q.left - p.left) < 0.5 && Math.abs(q.top - p.top) < 0.5 && Math.abs(q.width - p.width) < 0.5 && Math.abs(q.height - p.height) < 0.5) return;
-    _cam.pos = p; camLayout(); if (!_ly.camFitReq) { _ly.camFitReq = requestAnimationFrame(function () { _ly.camFitReq = 0; camFitSoon(); }); }
+    _cam.pos = p; camLayout(); camFitSoon();
   }
   function lyTrack() {
     if (!CFG.layoutOn || _ly.sus || document.hidden || uiBusy()) return;
@@ -6012,7 +6047,7 @@
     clearTimeout(_ly.t);
     var fire = function () { try { window.dispatchEvent(new Event('resize')); } catch (e) {} lyDock(!quick); try { apTrack(); } catch (e) {} pointerRefreshSoon(); };
     if (quick) { if (_ly.rzq) return; _ly.rzq = 1; try { fire(); } finally { requestAnimationFrame(function () { _ly.rzq = 0; }); } return; }
-    _ly.t = setTimeout(fire, 80);
+    requestAnimationFrame(fire); _ly.t = setTimeout(fire, 250);
   }
   function lyApply(quick) {
     quick = quick === true;
@@ -6308,7 +6343,7 @@
       lyTag(true); if (!document.getElementById(LY_ID)) lyApply();
     }, 1000);
     setInterval(function () { if (CFG.layoutOn && !_ly.sus && !document.hidden && !uiBusy() && lyGrid()) lyTag(); }, 5000);
-    setInterval(lyTrack, 350);
+    setInterval(lyTrack, 200);
     var scrRaf = 0;
     window.addEventListener('scroll', function () { if (scrRaf) return; scrRaf = requestAnimationFrame(function () { scrRaf = 0; lyTrack(); }); }, true);
     window.addEventListener('resize', function () {
